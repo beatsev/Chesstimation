@@ -34,6 +34,9 @@
 
 // For emulations:
 #include <thread>
+#ifndef TFT_BL
+#define TFT_BL 16  // Backlight control pin
+#endif
 #include <chrono>
 
 // my includes:
@@ -140,7 +143,7 @@ lv_obj_t *wp[8], *bp[8], *wk, *bk, *wn1, *bn1, *wn2, *bn2, *wb1, *bb1, *wb2, *bb
 lv_obj_t *clockEnableCB, *clockLbl, *whiteTimeLbl, *blackTimeLbl, *clockPauseBtn, *clockResetBtn, *timeControlDd, *timeControlLbl, *moveCounterLbl;
 
 void displayLEDstartUpSequence()
-{
+{   uint16_t touchX = 0, touchY = 0;
   for(int i=0; i<64; i++)
   {
     mephisto.writeRow(getRowFromBoardIndex(LED_startup_sequence[i]), 0x1 << getColFromBoardIndex(LED_startup_sequence[i]));
@@ -281,7 +284,7 @@ void resetChessClock() {
 }
 
 void assembleIncomingChesslinkMessage(char readChar)
-{
+{   uint16_t touchX = 0, touchY = 0;
   switch (readChar)
   {
   case 'R':
@@ -303,7 +306,7 @@ void assembleIncomingChesslinkMessage(char readChar)
 }
 
 void displayAboutBox()
-{
+{   uint16_t touchX = 0, touchY = 0;
   object = lv_msgbox_create(screenMain, VERSION, ABOUT_TEXT, NULL, true);
 
   lv_obj_add_style(object, &fLargeStyle, 0);
@@ -313,7 +316,7 @@ void displayAboutBox()
 }
 
 byte debugPrint(const char *message)
-{
+{   uint16_t touchX = 0, touchY = 0;
   if(connection != USB) 
   {
     Serial.print(message);
@@ -328,7 +331,7 @@ byte debugPrint(const char *message)
 }
 
 void startTouchCalibration()
-{
+{   uint16_t touchX = 0, touchY = 0;
     // object = lv_msgbox_create(NULL, "Touch Calibration", "Touch the corners with the white line\nin counter clockwise order", NULL, true);
 
     // lv_obj_add_style(object, &fLargeStyle, 0);
@@ -336,7 +339,9 @@ void startTouchCalibration()
     // lv_obj_center(object);
     // lv_obj_clear_flag(object, LV_OBJ_FLAG_SCROLLABLE);
 
+#ifdef TOUCH_CS
     tft.calibrateTouch(calibrationData, TFT_WHITE, TFT_RED, 15);
+#endif
     tft.fillRect(480-16, 320-16, 16, 16, TFT_RED);
 
     lv_obj_invalidate(settingsScreen);
@@ -345,7 +350,7 @@ void startTouchCalibration()
 }
 
 byte debugPrintln(const char *message)
-{
+{   uint16_t touchX = 0, touchY = 0;
   if(connection != USB) 
   {
     Serial.println(message);
@@ -360,7 +365,7 @@ byte debugPrintln(const char *message)
 }
 
 void saveBoardSettings(void)
-{
+{   uint16_t touchX = 0, touchY = 0;
   connectionType saveConnection = USB;
 
   if (!SPIFFS.begin())
@@ -399,7 +404,7 @@ void saveBoardSettings(void)
 }
 
 void loadBoardSettings(void)
-{
+{   uint16_t touchX = 0, touchY = 0;
 
   byte tempBoardSetup[64];
   uint16_t tempPiecesLifted[32];
@@ -504,7 +509,7 @@ void updateMephistoLEDs(byte mephistoLED[8][8]) {
 }
 
 byte getOddParity(byte value)
-{
+{   uint16_t touchX = 0, touchY = 0;
   value ^= value >> 4;
   value ^= value >> 2;
   value ^= value >> 1;
@@ -512,7 +517,7 @@ byte getOddParity(byte value)
 }
 
 void sendMessageToChessBoard(const char *message)
-{
+{   uint16_t touchX = 0, touchY = 0;
   std::string codedMessage = message;
   char blockCode[3];
 
@@ -565,7 +570,7 @@ void sendMessageToChessBoard(const char *message)
 }
 
 void updateSettingsScreen()
-{
+{   uint16_t touchX = 0, touchY = 0;
   if(chessBoard.emulation==0) 
   {
     lv_obj_add_state(certaboCB, LV_STATE_CHECKED);
@@ -588,7 +593,7 @@ void updateSettingsScreen()
 
 
 class MyServerCallbacks : public BLEServerCallbacks
-{
+{   uint16_t touchX = 0, touchY = 0;
   void onConnect(BLEServer *pServer)
   {
     connection = BLE;
@@ -607,7 +612,7 @@ class MyServerCallbacks : public BLEServerCallbacks
 };
 
 void sendChesslinkAnswer(char *incomingMessage)
-{
+{   uint16_t touchX = 0, touchY = 0;
   if (strlen(incomingMessage) == 3 && (strcmp(incomingMessage, "V56") == 0))
   {
     debugPrint("Detected valid incoming Version Request Message V: ");
@@ -710,7 +715,7 @@ void sendChesslinkAnswer(char *incomingMessage)
 }
 
 class MyCallbacksChesslink : public BLECharacteristicCallbacks
-{
+{   uint16_t touchX = 0, touchY = 0;
   void onWrite(BLECharacteristic *pCharacteristic)
   {
     std::string rxValue = pCharacteristic->getValue();
@@ -736,7 +741,7 @@ class MyCallbacksChesslink : public BLECharacteristicCallbacks
 
 
 void initBleServiceChesslink()
-{
+{   uint16_t touchX = 0, touchY = 0;
   //Bluetooth BLE initialization for mode B boards
   //esp_log_level_set("*", ESP_LOG_VERBOSE);
 
@@ -772,7 +777,7 @@ void initBleServiceChesslink()
 }
 
 void initSerialPortCommunication(void)
-{
+{   uint16_t touchX = 0, touchY = 0;
   if (connection != USB)
   {
     // Serial Port is used for debugging!
@@ -829,7 +834,7 @@ void initSerialPortCommunication(void)
 }
 
 void resetOldBoard()
-{
+{   uint16_t touchX = 0, touchY = 0;
   for (int i = 0; i < 64; i++)
   {
     oldBoard[i]=EMP;
@@ -841,7 +846,7 @@ void resetOldBoard()
 }
 
 void updatePiecesOnBoard()
-{
+{   uint16_t touchX = 0, touchY = 0;
   // Check if update for chess board display is needed:
 
   byte certPiece;
@@ -1065,7 +1070,7 @@ void updatePiecesOnBoard()
 }
 
 static void slider_event_cb(lv_event_t *e)
-{
+{   uint16_t touchX = 0, touchY = 0;
   lv_obj_t *slider = lv_event_get_target(e);
   brightness = lv_slider_get_value(slider);
   ledcWrite(0, (uint8_t)brightness);
@@ -1073,7 +1078,7 @@ static void slider_event_cb(lv_event_t *e)
 }
 
 void switchOff(void)
-{
+{   uint16_t touchX = 0, touchY = 0;
   saveBoardSettings();
 
   tft.writecommand(0x10); // TFT Display Sleep mode on
@@ -1123,7 +1128,7 @@ void switchOff(void)
 }
 
 void updateUI_language()
-{
+{   uint16_t touchX = 0, touchY = 0;
   if(language == ES) {
     lv_i18n_set_locale("ES");
     // lv_label_set_text(langLbl, "ES");
@@ -1165,7 +1170,7 @@ void updateUI_language()
 }
 
 static void event_handler(lv_event_t *e)
-{
+{   uint16_t touchX = 0, touchY = 0;
   lv_event_code_t code = lv_event_get_code(e);
   lv_obj_t *obj = lv_event_get_target(e);
 
@@ -1346,7 +1351,7 @@ static void event_handler(lv_event_t *e)
 }
 
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
-{
+{   uint16_t touchX = 0, touchY = 0;
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
@@ -1360,9 +1365,13 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 {
-   uint16_t touchX, touchY;
-
+   uint16_t touchX = 0, touchY = 0;
+#ifdef TOUCH_CS
    bool touched = tft.getTouch( &touchX, &touchY, 600 );
+#else
+   bool touched = false;
+#endif
+
 
    if( !touched )
    {
@@ -1385,7 +1394,7 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 }
 
 void initLVGL()
-{
+{   uint16_t touchX = 0, touchY = 0;
   tft.begin();
 
   tft.setRotation(1);
@@ -1418,7 +1427,7 @@ void initLVGL()
 }
 
 void createSettingsScreen()
-{
+{   uint16_t touchX = 0, touchY = 0;
   // Settings dialog:
 
   settingsScreen = lv_obj_create(NULL);
@@ -1652,7 +1661,7 @@ void createSettingsScreen()
 
 
 void createPromotionScreen()
-{
+{   uint16_t touchX = 0, touchY = 0;
   promotionScreen = lv_obj_create(NULL);
   lv_obj_set_size(promotionScreen, 480, 320);
   lv_obj_set_style_bg_color(promotionScreen, lv_color_hex(0x000000), 0);
@@ -1682,14 +1691,14 @@ void createPromotionScreen()
 }
 
 void createUI()
-{
+{   uint16_t touchX = 0, touchY = 0;
   screenMain = lv_obj_create(NULL);
 
   // lv_style_init(&fSmallStyle);
   // lv_style_set_text_font(&fSmallStyle, &lv_font_montserrat_10);
     
   lv_style_init(&fMediumStyle);
-  // lv_font_t mediumStyleFont = lv_font_montserrat_20;
+  // lv_font_t mediumStyleFont = montserrat_umlaute22;
   // mediumStyleFont.fallback = &umlaute20;
   // lv_style_set_text_font(&fMediumStyle, &mediumStyleFont);
   lv_style_set_text_font(&fMediumStyle, &montserrat_umlaute20);
@@ -1699,7 +1708,7 @@ void createUI()
   lv_style_set_text_font(&fLargeStyle, &montserrat_umlaute22);  // was 22
     
   lv_style_init(&fExtraLargeStyle);
-  lv_style_set_text_font(&fExtraLargeStyle, &lv_font_montserrat_28); // was 28
+  lv_style_set_text_font(&fExtraLargeStyle, &montserrat_umlaute22); // was 28
     
   object = lv_label_create(screenMain);
   lv_label_set_text(object, "Chesstimation");
@@ -1930,7 +1939,7 @@ void createUI()
   updateChessClockDisplay();
 }
 void setup()
-{
+{   uint16_t touchX = 0, touchY = 0;
 /*
   pinMode(POWER_SAVE_PIN, OUTPUT);
   gpio_hold_dis(POWER_SAVE_PIN);
@@ -1998,7 +2007,7 @@ void setup()
 }
 
 void loop()
-{
+{   uint16_t touchX = 0, touchY = 0;
   byte rows = 0;
   byte setBack = 0;
   byte lifted = 0;

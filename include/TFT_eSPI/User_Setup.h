@@ -37,6 +37,8 @@
 #define ILI9488_DRIVER
 #define TFT_INVERSION_ON   
 #define TOUCH_CS 21    // Chip select pin (T_CS) of touch screen
+// Enable touch support
+#define TOUCH_DRIVER_ENABLE
 #endif
 
 #define TFT_MISO 19
