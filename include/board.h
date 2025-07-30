@@ -99,6 +99,8 @@ public:
     void updateLiftedPiecesString(void);
     bool isWhitePawn(byte piece);
     bool isBlackPawn(byte piece);
+    bool isWhitePiece(byte piece);
+    bool isBlackPiece(byte piece);
     void setPieceBackTo(byte boardIndex);
     void liftPieceFrom(byte boardIndex);
     char FENpieceFromType(byte piece);

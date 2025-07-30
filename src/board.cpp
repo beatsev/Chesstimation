@@ -245,6 +245,16 @@ bool Board::isBlackPawn(byte piece) {
     return false;
 }
 
+bool Board::isWhitePiece(byte piece) {
+    if(piece == EMP) return false;
+    return (piece & 0x01) == 0; // White pieces have LSB = 0
+}
+
+bool Board::isBlackPiece(byte piece) {
+    if(piece == EMP) return false;
+    return (piece & 0x01) == 1; // Black pieces have LSB = 1
+}
+
 byte Board::getNextPromotionPieceForWhite(byte p) {
     // WQ1 && WQ2
     bool q1 = false;

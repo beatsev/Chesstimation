@@ -66,6 +66,19 @@ int physicalConformity = 0;
 enum connectionType {USB, BT, BLE} connection;  // Should be same order as in UI
 enum languageType {EN, ES, DE} language = DE;        // Should be same order as in UI, default to German
 
+// Chess Clock variables
+struct ChessClock {
+  bool enabled = false;
+  bool running = false;
+  bool whiteToMove = true;
+  unsigned long whiteTimeMs = 15 * 60 * 1000; // 15 minutes default
+  unsigned long blackTimeMs = 15 * 60 * 1000; // 15 minutes default
+  unsigned long lastUpdateMs = 0;
+  int timeControlMinutes = 15; // Time control setting in minutes
+  int moveCount = 0; // Total number of plies (half-moves)
+  int fullMoveNumber = 1; // Full move number (increments after black's move)
+} chessClock;
+
 byte readRawRow[8];
 byte led_buffer[8];
 byte mephistoLED[8][8];
@@ -123,6 +136,9 @@ lv_obj_t *square[64], *dummy1Btn, *calibrateBtn, *object, *brightnessSlider, *co
 lv_obj_t *ui_settings_obj, *offBtnLbl, *newGameLbl, *brightLbl, *backLbl, *settingsLbl, *emulationLbl, *langDd, *connectionDd, *promotionScreen, *promotionQueenBtn, *promotionRookBtn, *promotionBishopBtn, *promotionKnightBtn;
 lv_obj_t *wp[8], *bp[8], *wk, *bk, *wn1, *bn1, *wn2, *bn2, *wb1, *bb1, *wb2, *bb2, *wr1, *br1, *wr2, *br2, *wq1, *bq1, *wq2, *bq2;
 
+// Chess Clock UI elements
+lv_obj_t *clockEnableCB, *clockLbl, *whiteTimeLbl, *blackTimeLbl, *clockPauseBtn, *clockResetBtn, *timeControlDd, *timeControlLbl, *moveCounterLbl;
+
 void displayLEDstartUpSequence()
 {
   for(int i=0; i<64; i++)
@@ -130,6 +146,138 @@ void displayLEDstartUpSequence()
     mephisto.writeRow(getRowFromBoardIndex(LED_startup_sequence[i]), 0x1 << getColFromBoardIndex(LED_startup_sequence[i]));
     delay(48);
   }
+}
+
+// Chess Clock Functions
+void formatTime(unsigned long timeMs, char* buffer) {
+  unsigned long totalSeconds = timeMs / 1000;
+  unsigned long minutes = totalSeconds / 60;
+  unsigned long seconds = totalSeconds % 60;
+  sprintf(buffer, "%02lu:%02lu", minutes, seconds);
+}
+
+void updateMoveCounterDisplay() {
+  if (!chessClock.enabled) {
+    lv_label_set_text(moveCounterLbl, "");
+    return;
+  }
+  
+  // Display move counter in chess notation format: "Move 15" or "15. ..." for white, "15... " for black
+  if (chessClock.whiteToMove) {
+    lv_label_set_text_fmt(moveCounterLbl, "Move %d", chessClock.fullMoveNumber);
+  } else {
+    lv_label_set_text_fmt(moveCounterLbl, "Move %d...", chessClock.fullMoveNumber);
+  }
+}
+
+void updateChessClockDisplay() {
+  if (!chessClock.enabled) {
+    lv_label_set_text(whiteTimeLbl, "--:--");
+    lv_label_set_text(blackTimeLbl, "--:--");
+    lv_label_set_text(moveCounterLbl, "");
+    return;
+  }
+  
+  char whiteTimeStr[8];
+  char blackTimeStr[8];
+  formatTime(chessClock.whiteTimeMs, whiteTimeStr);
+  formatTime(chessClock.blackTimeMs, blackTimeStr);
+  
+  // Highlight the active player's time
+  if (chessClock.whiteToMove) {
+    lv_label_set_text_fmt(whiteTimeLbl, "> %s", whiteTimeStr);
+    lv_label_set_text(blackTimeLbl, blackTimeStr);
+  } else {
+    lv_label_set_text(whiteTimeLbl, whiteTimeStr);
+    lv_label_set_text_fmt(blackTimeLbl, "> %s", blackTimeStr);
+  }
+  
+  updateMoveCounterDisplay();
+}
+
+void updateChessClock() {
+  if (!chessClock.enabled || !chessClock.running) {
+    return;
+  }
+  
+  unsigned long currentMs = millis();
+  unsigned long elapsed = currentMs - chessClock.lastUpdateMs;
+  
+  if (chessClock.whiteToMove) {
+    if (chessClock.whiteTimeMs > elapsed) {
+      chessClock.whiteTimeMs -= elapsed;
+    } else {
+      chessClock.whiteTimeMs = 0;
+      chessClock.running = false; // Time expired
+    }
+  } else {
+    if (chessClock.blackTimeMs > elapsed) {
+      chessClock.blackTimeMs -= elapsed;
+    } else {
+      chessClock.blackTimeMs = 0;
+      chessClock.running = false; // Time expired
+    }
+  }
+  
+  chessClock.lastUpdateMs = currentMs;
+  updateChessClockDisplay();
+}
+
+void switchClockPlayer() {
+  if (!chessClock.enabled) return;
+  
+  updateChessClock(); // Update current player's time first
+  chessClock.whiteToMove = !chessClock.whiteToMove;
+  chessClock.lastUpdateMs = millis();
+  updateChessClockDisplay();
+}
+
+void switchClockToPlayer(bool whitePlayer) {
+  if (!chessClock.enabled) return;
+  
+  updateChessClock(); // Update current player's time first
+  chessClock.whiteToMove = whitePlayer;
+  chessClock.lastUpdateMs = millis();
+  updateChessClockDisplay();
+}
+
+void startChessClock() {
+  if (!chessClock.enabled) return;
+  
+  chessClock.running = true;
+  chessClock.lastUpdateMs = millis();
+}
+
+void pauseChessClock() {
+  if (!chessClock.enabled) return;
+  
+  updateChessClock(); // Update time before pausing
+  chessClock.running = false;
+}
+
+void incrementMoveCounter(bool wasWhiteMove) {
+  chessClock.moveCount++;
+  
+  if (wasWhiteMove) {
+    // White just moved, so we're now on black's turn but same full move number
+    // Full move number stays the same
+  } else {
+    // Black just moved, increment full move number for next white move
+    chessClock.fullMoveNumber++;
+  }
+  
+  updateMoveCounterDisplay();
+}
+
+void resetChessClock() {
+  chessClock.whiteTimeMs = chessClock.timeControlMinutes * 60 * 1000;
+  chessClock.blackTimeMs = chessClock.timeControlMinutes * 60 * 1000;
+  chessClock.whiteToMove = true;
+  chessClock.running = false;
+  chessClock.lastUpdateMs = millis();
+  chessClock.moveCount = 0;
+  chessClock.fullMoveNumber = 1;
+  updateChessClockDisplay();
 }
 
 void assembleIncomingChesslinkMessage(char readChar)
@@ -242,6 +390,10 @@ void saveBoardSettings(void)
     f.write(saveConnection);
     f.write(brightness);
     f.write(language);
+    f.write(chessClock.enabled ? 1 : 0);
+    f.write(chessClock.timeControlMinutes);
+    f.write((const byte *)&chessClock.moveCount, sizeof(chessClock.moveCount));
+    f.write((const byte *)&chessClock.fullMoveNumber, sizeof(chessClock.fullMoveNumber));
     f.close();
   }
 }
@@ -315,6 +467,27 @@ void loadBoardSettings(void)
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
         language = (languageType)tempInt8[0];
+      }
+      if (f.readBytes((char *)tempInt8, 1) == 1)
+      {
+        chessClock.enabled = (tempInt8[0] == 1);
+      }
+      if (f.readBytes((char *)tempInt8, 1) == 1)
+      {
+        chessClock.timeControlMinutes = tempInt8[0];
+        if (chessClock.timeControlMinutes < 1 || chessClock.timeControlMinutes > 120) {
+          chessClock.timeControlMinutes = 15; // Default to 15 minutes if invalid
+        }
+        resetChessClock(); // Apply the loaded time control
+      }
+      if (f.readBytes((char *)&chessClock.moveCount, sizeof(chessClock.moveCount)) == sizeof(chessClock.moveCount))
+      {
+        // Move count loaded successfully
+      }
+      if (f.readBytes((char *)&chessClock.fullMoveNumber, sizeof(chessClock.fullMoveNumber)) == sizeof(chessClock.fullMoveNumber))
+      {
+        // Full move number loaded successfully
+        updateMoveCounterDisplay();
       }
       f.close();
     }
@@ -977,6 +1150,18 @@ void updateUI_language()
   lv_label_set_text(brightLbl, lv_i18n_get_text("UI_BRIGHTNESS"));
   lv_label_set_text(backLbl, lv_i18n_get_text("UI_BACK"));
 
+  // Update chess clock labels
+  lv_label_set_text(clockLbl, lv_i18n_get_text("UI_CHESS_CLOCK"));
+  lv_checkbox_set_text(clockEnableCB, lv_i18n_get_text("UI_CLOCK_ENABLE"));
+  lv_label_set_text(timeControlLbl, lv_i18n_get_text("UI_TIME_CONTROL"));
+  
+  // Update clock button labels
+  if (chessClock.running) {
+    lv_label_set_text(lv_obj_get_child(clockPauseBtn, 0), lv_i18n_get_text("UI_PAUSE_CLOCK"));
+  } else {
+    lv_label_set_text(lv_obj_get_child(clockPauseBtn, 0), lv_i18n_get_text("UI_RESUME_CLOCK"));
+  }
+  lv_label_set_text(lv_obj_get_child(clockResetBtn, 0), lv_i18n_get_text("UI_RESET_CLOCK"));
 }
 
 static void event_handler(lv_event_t *e)
@@ -1026,6 +1211,7 @@ static void event_handler(lv_event_t *e)
       chessBoard.startPosition(lv_obj_get_state(certaboCalibCB) & LV_STATE_CHECKED);
       resetOldBoard();
       updatePiecesOnBoard();
+      resetChessClock(); // Reset chess clock on new game
 
       physicalConformity = (lv_obj_get_state(certaboCalibCB) & LV_STATE_CHECKED); // Physical conformity not checked when using calibration Queens in Certabo Emulation!
 
@@ -1054,6 +1240,21 @@ static void event_handler(lv_event_t *e)
     {
       chessBoard.promotionPiece = WN1;
       lv_scr_load(screenMain);
+    }
+    if (obj == clockPauseBtn)
+    {
+      if (chessClock.running) {
+        pauseChessClock();
+        lv_label_set_text(lv_obj_get_child(clockPauseBtn, 0), lv_i18n_get_text("UI_RESUME_CLOCK"));
+      } else {
+        startChessClock();
+        lv_label_set_text(lv_obj_get_child(clockPauseBtn, 0), lv_i18n_get_text("UI_PAUSE_CLOCK"));
+      }
+    }
+    if (obj == clockResetBtn)
+    {
+      resetChessClock();
+      lv_label_set_text(lv_obj_get_child(clockPauseBtn, 0), lv_i18n_get_text("UI_PAUSE_CLOCK"));
     }
   }
   else if (code == LV_EVENT_VALUE_CHANGED)
@@ -1120,6 +1321,25 @@ static void event_handler(lv_event_t *e)
     if (obj == flippedCB)
     {
       chessBoard.flipped = lv_obj_get_state(flippedCB) & LV_STATE_CHECKED;
+    }
+    if (obj == clockEnableCB)
+    {
+      chessClock.enabled = lv_obj_get_state(clockEnableCB) & LV_STATE_CHECKED;
+      updateChessClockDisplay();
+    }
+    if (obj == timeControlDd)
+    {
+      int selectedIndex = lv_dropdown_get_selected(timeControlDd);
+      switch(selectedIndex) {
+        case 0: chessClock.timeControlMinutes = 5; break;
+        case 1: chessClock.timeControlMinutes = 10; break;
+        case 2: chessClock.timeControlMinutes = 15; break;
+        case 3: chessClock.timeControlMinutes = 30; break;
+        case 4: chessClock.timeControlMinutes = 60; break;
+        case 5: chessClock.timeControlMinutes = 90; break;
+        default: chessClock.timeControlMinutes = 15; break;
+      }
+      resetChessClock();
     }
     updateSettingsScreen();
   }
@@ -1378,6 +1598,49 @@ void createSettingsScreen()
   // lv_obj_center(label);
   // lv_obj_add_style(label, &fMediumStyle, 0);
 
+  // Chess Clock Settings
+  clockLbl = lv_label_create(content);
+  lv_obj_add_style(clockLbl, &fLargeStyle, 0);
+
+  clockEnableCB = lv_checkbox_create(content);
+  lv_obj_add_event_cb(clockEnableCB, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_add_style(clockEnableCB, &fMediumStyle, 0);
+  if(chessClock.enabled) {
+    lv_obj_add_state(clockEnableCB, LV_STATE_CHECKED);
+  }
+
+  object = lv_obj_create(content);  // Panel for Time Control Label and Dropdown
+  lv_obj_set_size(object, 275, 42);
+  lv_obj_set_style_pad_all(object, 0, 0);
+  lv_obj_set_style_radius(object, 0, 0);
+  lv_obj_set_style_border_width(object, 0, 0);
+  lv_obj_align_to(object, content, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_clear_flag(object, LV_OBJ_FLAG_SCROLLABLE);
+
+  timeControlLbl = lv_label_create(object);
+  lv_obj_set_style_pad_all(timeControlLbl, 0, 0);
+  lv_obj_add_style(timeControlLbl, &fLargeStyle, 0);
+  lv_obj_set_align(timeControlLbl, LV_ALIGN_LEFT_MID);
+
+  timeControlDd = lv_dropdown_create(object);
+  lv_dropdown_set_options_static(timeControlDd, "5 min\n10 min\n15 min\n30 min\n60 min\n90 min");
+  lv_obj_set_align(timeControlDd, LV_ALIGN_RIGHT_MID);
+  lv_obj_set_style_pad_all(timeControlDd, 4, 0);
+  lv_obj_set_size(timeControlDd, 80, LV_SIZE_CONTENT);
+  lv_obj_add_event_cb(timeControlDd, event_handler, LV_EVENT_ALL, NULL);
+  
+  // Set the correct dropdown selection based on current time control
+  int dropdownIndex = 2; // Default to 15 min
+  switch(chessClock.timeControlMinutes) {
+    case 5: dropdownIndex = 0; break;
+    case 10: dropdownIndex = 1; break;
+    case 15: dropdownIndex = 2; break;
+    case 30: dropdownIndex = 3; break;
+    case 60: dropdownIndex = 4; break;
+    case 90: dropdownIndex = 5; break;
+  }
+  lv_dropdown_set_selected(timeControlDd, dropdownIndex);
+
   exitSettingsBtn = lv_btn_create(content);
   backLbl = lv_label_create(exitSettingsBtn);
   lv_obj_add_event_cb(exitSettingsBtn, event_handler, LV_EVENT_ALL, NULL);
@@ -1511,7 +1774,49 @@ void createUI()
   lv_obj_set_style_text_align(connectionLbl, LV_TEXT_ALIGN_RIGHT, 0);
   lv_obj_set_size(connectionLbl, 29, 20);
   lv_obj_set_pos(connectionLbl, 442, 75);
-  lv_obj_add_style(connectionLbl, &fLargeStyle, 0);  
+  lv_obj_add_style(connectionLbl, &fLargeStyle, 0);
+
+  // Chess Clock Display on Main Screen
+  whiteTimeLbl = lv_label_create(screenMain);
+  lv_obj_set_style_text_align(whiteTimeLbl, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_size(whiteTimeLbl, 70, 25);
+  lv_obj_set_pos(whiteTimeLbl, 330, 70);
+  lv_obj_add_style(whiteTimeLbl, &fMediumStyle, 0);
+  lv_label_set_text(whiteTimeLbl, "--:--");
+
+  blackTimeLbl = lv_label_create(screenMain);
+  lv_obj_set_style_text_align(blackTimeLbl, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_size(blackTimeLbl, 70, 25);
+  lv_obj_set_pos(blackTimeLbl, 405, 70);
+  lv_obj_add_style(blackTimeLbl, &fMediumStyle, 0);
+  lv_label_set_text(blackTimeLbl, "--:--");
+
+  // Move Counter Display
+  moveCounterLbl = lv_label_create(screenMain);
+  lv_obj_set_style_text_align(moveCounterLbl, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_size(moveCounterLbl, 145, 20);
+  lv_obj_set_pos(moveCounterLbl, 330, 50);
+  lv_obj_add_style(moveCounterLbl, &fMediumStyle, 0);
+  lv_label_set_text(moveCounterLbl, "Move 1");
+
+  // Chess Clock Control Buttons
+  clockPauseBtn = lv_btn_create(screenMain);
+  lv_obj_add_event_cb(clockPauseBtn, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_set_size(clockPauseBtn, 70, 25);
+  lv_obj_set_pos(clockPauseBtn, 330, 95);
+  lv_obj_t *pauseLbl = lv_label_create(clockPauseBtn);
+  lv_obj_center(pauseLbl);
+  lv_obj_add_style(pauseLbl, &fMediumStyle, 0);
+  lv_label_set_text(pauseLbl, "Pause");
+
+  clockResetBtn = lv_btn_create(screenMain);
+  lv_obj_add_event_cb(clockResetBtn, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_set_size(clockResetBtn, 70, 25);
+  lv_obj_set_pos(clockResetBtn, 405, 95);
+  lv_obj_t *resetLbl = lv_label_create(clockResetBtn);
+  lv_obj_center(resetLbl);
+  lv_obj_add_style(resetLbl, &fMediumStyle, 0);
+  lv_label_set_text(resetLbl, "Reset");  
 
   // Create Chessboard
 
@@ -1620,6 +1925,9 @@ void createUI()
   resetOldBoard();
   updatePiecesOnBoard();
   createPromotionScreen();
+  
+  // Initialize chess clock display
+  updateChessClockDisplay();
 }
 void setup()
 {
@@ -1732,6 +2040,9 @@ void loop()
 #endif  
 
   lv_task_handler();
+  
+  // Update chess clock
+  updateChessClock();
 
 #ifdef BOARD_TEST
   if ((lv_obj_get_state(testCB) & LV_STATE_CHECKED) == 1)
@@ -1957,6 +2268,76 @@ void loop()
     {
       lv_label_set_text(debugLbl, "");
       lv_label_set_text(liftedPiecesStringLbl, "");
+      
+      // Switch chess clock player when a move is completed (no pieces lifted)
+      if (setBack > 0 && chessClock.enabled) {
+        // Determine which player made the move by checking pieces that were recently moved
+        bool foundMovingPiece = false;
+        bool wasWhiteMove = false;
+        
+        // Method 1: Check the most recently lifted piece (from the move just completed)
+        if (chessBoard.liftedIdx >= 0) {
+          // Look at the pieces that were just moved (in the piecesLifted array)
+          for (int i = 0; i < 32; i++) {
+            uint16_t liftedPieceInfo = chessBoard.piecesLifted[i];
+            if (liftedPieceInfo != 0) {
+              byte pieceType = liftedPieceInfo & 0x00FF;
+              if (pieceType != EMP) {
+                if (chessBoard.isWhitePiece(pieceType)) {
+                  wasWhiteMove = true;
+                  foundMovingPiece = true;
+                  break;
+                } else if (chessBoard.isBlackPiece(pieceType)) {
+                  wasWhiteMove = false;
+                  foundMovingPiece = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        // Method 2: If Method 1 failed, check board differences
+        if (!foundMovingPiece) {
+          for (int i = 0; i < 64 && !foundMovingPiece; i++) {
+            if (chessBoard.piece[i] != oldBoard[i] && chessBoard.piece[i] != EMP) {
+              // This piece was just placed
+              if (chessBoard.isWhitePiece(chessBoard.piece[i])) {
+                wasWhiteMove = true;
+                foundMovingPiece = true;
+              } else if (chessBoard.isBlackPiece(chessBoard.piece[i])) {
+                wasWhiteMove = false;
+                foundMovingPiece = true;
+              }
+            }
+          }
+        }
+        
+        if (foundMovingPiece) {
+          // Increment move counter
+          incrementMoveCounter(wasWhiteMove);
+          
+          // Switch clock to the opposite player (the one who should move next)
+          switchClockToPlayer(!wasWhiteMove);
+          
+          // Debug output to show detected move with move number
+          if (wasWhiteMove) {
+            lv_label_set_text_fmt(debugLbl, "Move %d: White - Black's turn", chessClock.moveCount);
+          } else {
+            lv_label_set_text_fmt(debugLbl, "Move %d: Black - White's turn", chessClock.moveCount);
+          }
+        } else {
+          // Fallback to simple alternating if we can't detect the moving piece
+          chessClock.moveCount++; // Still increment move counter
+          switchClockPlayer();
+          lv_label_set_text_fmt(debugLbl, "Move %d detected - switched clock", chessClock.moveCount);
+          updateMoveCounterDisplay();
+        }
+        
+        if (!chessClock.running) {
+          startChessClock(); // Auto-start clock on first move
+        }
+      }
     }
     else
     {
