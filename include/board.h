@@ -20,7 +20,7 @@
 #include <Arduino.h>
 
 // #define MAX_CERTABO_MSG_LENGTH 768
-#define MAX_CERTABO_MSG_LENGTH 680
+#define MAX_CERTABO_MSG_LENGTH 512
 
 #define toBoardIndex(row, col) ((7 - row) * 8 + col)
 #define getColFromBoardIndex(index) (index % 8)

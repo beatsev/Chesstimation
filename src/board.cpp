@@ -86,6 +86,7 @@ void Board::startPosition(byte queens) {
 
 Board::Board(void) {
     boardMessage[0]=0;
+    liftedPiecesDisplayString[0]=0;
     liftedIdx=255;
     startPosition(0);
     lastRawRow [0] = lastRawRow [1] = lastRawRow [6] = lastRawRow [7] = 255; 
