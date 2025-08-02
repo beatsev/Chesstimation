@@ -1400,9 +1400,39 @@ void initLVGL()
   Serial.println("6b. TFT begin complete, setting rotation...");
 
   tft.setRotation(1);
-  Serial.println("6c. TFT rotation set, clearing screen...");
+  Serial.println("6c. TFT rotation set, testing display colors...");
+  
+  // Test different colors to verify display is working
+  Serial.println("6c1. Testing RED screen...");
+  tft.fillScreen(TFT_RED);
+  delay(2000);
+  
+  Serial.println("6c2. Testing GREEN screen...");
+  tft.fillScreen(TFT_GREEN);
+  delay(2000);
+  
+  Serial.println("6c3. Testing BLUE screen...");
+  tft.fillScreen(TFT_BLUE);
+  delay(2000);
+  
+  Serial.println("6c4. Testing WHITE screen...");
+  tft.fillScreen(TFT_WHITE);
+  delay(2000);
+  
+  Serial.println("6d. Color tests complete, clearing to black...");
   tft.fillScreen(TFT_BLACK);
-  Serial.println("6d. Screen cleared, initializing LVGL...");
+  
+  // Test text display
+  Serial.println("6d1. Testing text display...");
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(3);
+  tft.setCursor(50, 100);
+  tft.println("CHESSTIMATION");
+  tft.setCursor(50, 150);
+  tft.println("DISPLAY TEST");
+  delay(3000);
+  
+  Serial.println("6e. Text test complete, initializing LVGL...");
 
 // Test for brightness control: did not work...
   // tft.writecommand(0x53);
@@ -1991,6 +2021,19 @@ void setup()
   loadBoardSettings();
   Serial.print("5. Setting brightness to: ");
   Serial.println(brightness);
+  
+  // Force maximum brightness for testing
+  Serial.println("5a. Testing with maximum brightness (255)...");
+  ledcWrite(0, 255);
+  delay(1000);
+  
+  // Try direct GPIO control as backup
+  Serial.println("5b. Testing direct GPIO HIGH...");
+  digitalWrite(TFT_BL, HIGH);
+  delay(1000);
+  
+  // Set back to configured brightness
+  Serial.println("5c. Setting back to configured brightness...");
   ledcWrite(0, brightness);
   // if(chessBoard.emulation == 0 && connection == BLE)
   //   connection = USB;
