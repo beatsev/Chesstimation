@@ -59,6 +59,6 @@
 
 // #define SMOOTH_FONT
 
-#define SPI_FREQUENCY  20000000 // Some displays will operate at higher frequencies
+#define SPI_FREQUENCY  10000000 // Reduced for ILI9488 stability (was 20MHz)
 
 #define SPI_TOUCH_FREQUENCY  2500000

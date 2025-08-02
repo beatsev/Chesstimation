@@ -1396,8 +1396,18 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 void initLVGL()
 {   uint16_t touchX = 0, touchY = 0;
   Serial.println("6a. Starting TFT initialization...");
+  
+  // ILI9488-specific debugging
+  Serial.println("6a1. Display driver: ILI9488");
+  Serial.println("6a2. SPI Frequency: 20MHz");
+  Serial.println("6a3. Color depth: 18-bit (ILI9488 specific)");
+  
   tft.begin();
-  Serial.println("6b. TFT begin complete, setting rotation...");
+  Serial.println("6b. TFT begin complete, checking display ID...");
+  
+  // Try to read display ID to verify communication
+  Serial.println("6b1. Attempting to read display status...");
+  delay(100); // Give display time to initialize
 
   tft.setRotation(1);
   Serial.println("6c. TFT rotation set, testing display colors...");
