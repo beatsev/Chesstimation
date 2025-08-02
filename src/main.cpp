@@ -1440,15 +1440,28 @@ void initLVGL()
   // tft.writecommand(0x51);
   // tft.writedata(20);
 
-  // STOP HERE FOR TESTING - Don't initialize LVGL yet
-  Serial.println("=== STOPPING BEFORE LVGL - TFT TESTS SHOULD BE VISIBLE ===");
-  Serial.println("If you can see the color and text tests above, TFT is working fine.");
-  Serial.println("The issue is likely in LVGL configuration or memory settings.");
+  // Test basic TFT commands with delays and verification
+  Serial.println("=== TESTING TFT COMMANDS STEP BY STEP ===");
   
-  // Keep the display showing the test text
+  Serial.println("Testing TFT width/height...");
+  Serial.print("TFT Width: "); Serial.println(tft.width());
+  Serial.print("TFT Height: "); Serial.println(tft.height());
+  
+  Serial.println("Testing simple pixel draw...");
+  tft.drawPixel(100, 100, TFT_RED);
+  tft.drawPixel(101, 100, TFT_GREEN);
+  tft.drawPixel(102, 100, TFT_BLUE);
+  delay(2000);
+  
+  Serial.println("Testing simple rectangle...");
+  tft.drawRect(50, 50, 100, 50, TFT_WHITE);
+  tft.fillRect(60, 60, 80, 30, TFT_YELLOW);
+  delay(2000);
+  
+  // Keep the display showing the test
   while(true) {
     delay(1000);
-    Serial.println("Waiting... (TFT test should be visible)");
+    Serial.println("TFT basic tests complete - check display");
   }
 
   lv_init();
