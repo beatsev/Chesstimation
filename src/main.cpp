@@ -1395,9 +1395,14 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 
 void initLVGL()
 {   uint16_t touchX = 0, touchY = 0;
+  Serial.println("6a. Starting TFT initialization...");
   tft.begin();
+  Serial.println("6b. TFT begin complete, setting rotation...");
 
   tft.setRotation(1);
+  Serial.println("6c. TFT rotation set, clearing screen...");
+  tft.fillScreen(TFT_BLACK);
+  Serial.println("6d. Screen cleared, initializing LVGL...");
 
 // Test for brightness control: did not work...
   // tft.writecommand(0x53);
@@ -1406,8 +1411,10 @@ void initLVGL()
   // tft.writedata(20);
 
   lv_init();
+  Serial.println("6e. LVGL init complete, setting up display buffer...");
 
   lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
+  Serial.println("6f. Display buffer initialized, setting up display driver...");
 
   /*Initialize the display*/
 
@@ -1417,6 +1424,7 @@ void initLVGL()
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
   lv_disp_drv_register(&disp_drv);
+  Serial.println("6g. Display driver registered, setting up input driver...");
 
   /*Initialize the input device driver*/
 
@@ -1424,6 +1432,7 @@ void initLVGL()
   indev_drv.type = LV_INDEV_TYPE_POINTER; /*Touch pad is a pointer-like device*/
   indev_drv.read_cb = my_input_read;      /*Set your driver function*/
   lv_indev_drv_register(&indev_drv);      /*Finally register the driver*/
+  Serial.println("6h. Input driver registered, LVGL initialization complete!");
 }
 
 void createSettingsScreen()
@@ -1946,6 +1955,10 @@ void setup()
   digitalWrite(POWER_SAVE_PIN, HIGH);
 */
 
+  Serial.begin(115200);
+  Serial.println("=== Chesstimation Starting ===");
+  Serial.println("1. Setting up backlight...");
+
   pinMode(TFT_BL, OUTPUT);
   // digitalWrite(TFT_BL, HIGH);    
   ledcSetup(0, 5000, 8);
@@ -1966,13 +1979,18 @@ void setup()
   gpio_hold_dis(GPIO_NUM_2);
 */
 
+  Serial.println("2. Initializing Mephisto ports...");
   mephisto.initPorts();
   // displayLEDstartUpSequence();
 
+  Serial.println("3. Setting up chess board...");
   chessBoard.startPosition(0);
   connection = BLE;
   // ledcWrite(0, 255);
+  Serial.println("4. Loading board settings...");
   loadBoardSettings();
+  Serial.print("5. Setting brightness to: ");
+  Serial.println(brightness);
   ledcWrite(0, brightness);
   // if(chessBoard.emulation == 0 && connection == BLE)
   //   connection = USB;
@@ -1987,22 +2005,30 @@ void setup()
 
   // buf = (lv_color_t*) malloc(DISP_BUF_SIZE);
 
+  Serial.println("6. Initializing LVGL and display...");
   initLVGL();
 
+  Serial.println("7. Initializing i18n...");
   lv_i18n_init(lv_i18n_language_pack);
 
+  Serial.println("8. Creating UI...");
   createUI();
 
+  Serial.println("9. Creating settings screen...");
   createSettingsScreen();
 
+  Serial.println("10. Updating UI language...");
   updateUI_language();
 
+  Serial.println("11. Initializing serial communication...");
   initSerialPortCommunication();
 
+  Serial.println("12. Loading main screen...");
   lv_scr_load(screenMain);
 
   chessBoard.updateLiftedPiecesString();
 
+  Serial.println("=== Setup Complete - Entering Main Loop ===");
   // chessBoard.printDebugMessage();
 }
 
