@@ -1399,7 +1399,7 @@ void initLVGL()
   
   // ILI9488-specific debugging
   Serial.println("6a1. Display driver: ILI9488");
-  Serial.println("6a2. SPI Frequency: 20MHz");
+  Serial.println("6a2. SPI Frequency: 10MHz");
   Serial.println("6a3. Color depth: 18-bit (ILI9488 specific)");
   
   tft.begin();
@@ -1456,6 +1456,13 @@ void initLVGL()
   Serial.println("Testing TFT width/height...");
   Serial.print("TFT Width: "); Serial.println(tft.width());
   Serial.print("TFT Height: "); Serial.println(tft.height());
+  
+  // CRITICAL: Wrong resolution detected!
+  if(tft.width() != 480 || tft.height() != 320) {
+    Serial.println("*** ERROR: Wrong display resolution! ***");
+    Serial.println("*** Expected: 480x320, Got: " + String(tft.width()) + "x" + String(tft.height()) + " ***");
+    Serial.println("*** This explains the black screen - drawing to wrong canvas size ***");
+  }
   
   Serial.println("Testing simple pixel draw...");
   tft.drawPixel(100, 100, TFT_RED);
