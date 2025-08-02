@@ -103,8 +103,8 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 40)
-// #define DISP_BUF_SIZE (480 * 10)
+#define DISP_BUF_SIZE (480 * 40)
+// Previous buffer size was too small (320 * 40)
 lv_disp_draw_buf_t disp_buf;
 
 lv_color_t buf[DISP_BUF_SIZE];
@@ -1397,17 +1397,33 @@ void initLVGL()
 {   uint16_t touchX = 0, touchY = 0;
   Serial.println("6a. Starting TFT initialization...");
   
-  // ILI9488-specific debugging
-  Serial.println("6a1. Display driver: ILI9488");
-  Serial.println("6a2. SPI Frequency: 10MHz");
-  Serial.println("6a3. Color depth: 18-bit (ILI9488 specific)");
+  // Test SPI pins first
+  Serial.println("6a1. Testing SPI pin configuration...");
+  Serial.print("TFT_MOSI: "); Serial.println(TFT_MOSI);
+  Serial.print("TFT_MISO: "); Serial.println(TFT_MISO);
+  Serial.print("TFT_SCLK: "); Serial.println(TFT_SCLK);
+  Serial.print("TFT_CS: "); Serial.println(TFT_CS);
+  Serial.print("TFT_DC: "); Serial.println(TFT_DC);
+  Serial.print("TFT_RST: "); Serial.println(TFT_RST);
+  Serial.print("TFT_BL: "); Serial.println(TFT_BL);
   
+  // Test basic GPIO before TFT init
+  Serial.println("6a2. Testing basic GPIO control...");
+  pinMode(TFT_CS, OUTPUT);
+  pinMode(TFT_DC, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(TFT_DC, HIGH);
+  delay(100);
+  digitalWrite(TFT_CS, LOW);
+  digitalWrite(TFT_DC, LOW);
+  delay(100);
+  Serial.println("6a3. GPIO test complete");
+  
+  Serial.println("6a4. Starting TFT.begin()...");
   tft.begin();
-  Serial.println("6b. TFT begin complete, checking display ID...");
+  Serial.println("6b. TFT begin complete - checking if it worked...");
   
-  // Try to read display ID to verify communication
-  Serial.println("6b1. Attempting to read display status...");
-  delay(100); // Give display time to initialize
+  delay(500); // Give more time for initialization
 
   tft.setRotation(1);
   Serial.println("6c. TFT rotation set, testing display colors...");
@@ -1444,7 +1460,7 @@ void initLVGL()
   
   Serial.println("6e. Text test complete, initializing LVGL...");
 
-// Test for brightness control: did not work...
+  // Test for brightness control: did not work...
   // tft.writecommand(0x53);
   // tft.writedata(0xFF);
   // tft.writecommand(0x51);
@@ -1457,7 +1473,7 @@ void initLVGL()
   Serial.print("TFT Width: "); Serial.println(tft.width());
   Serial.print("TFT Height: "); Serial.println(tft.height());
   
-  // CRITICAL: Wrong resolution detected!
+  // Verify resolution is correct
   if(tft.width() != 480 || tft.height() != 320) {
     Serial.println("*** ERROR: Wrong display resolution! ***");
     Serial.println("*** Expected: 480x320, Got: " + String(tft.width()) + "x" + String(tft.height()) + " ***");
@@ -1475,12 +1491,8 @@ void initLVGL()
   tft.fillRect(60, 60, 80, 30, TFT_YELLOW);
   delay(2000);
   
-  // Keep the display showing the test
-  while(true) {
-    delay(1000);
-    Serial.println("TFT basic tests complete - check display");
-  }
-
+  lv_init();
+  Serial.println("6e. LVGL init complete, setting up display buffer...");
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
 
@@ -1490,8 +1502,12 @@ void initLVGL()
   /*Initialize the display*/
 
   lv_disp_drv_init(&disp_drv);
+  
+  // Make sure these match the actual display resolution - was causing black screen
+  // ILI9488 native resolution is 480x320
   disp_drv.hor_res = 480;
   disp_drv.ver_res = 320;
+  
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
   lv_disp_drv_register(&disp_drv);
