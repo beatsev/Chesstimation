@@ -103,8 +103,8 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (480 * 10)
-// Reduced buffer size to prevent DRAM overflow error
+#define DISP_BUF_SIZE (320 * 10)
+// Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
 lv_color_t buf[DISP_BUF_SIZE];
@@ -342,7 +342,7 @@ void startTouchCalibration()
 #ifdef TOUCH_CS
     tft.calibrateTouch(calibrationData, TFT_WHITE, TFT_RED, 15);
 #endif
-    tft.fillRect(480-16, 320-16, 16, 16, TFT_RED);
+    tft.fillRect(320-16, 240-16, 16, 16, TFT_RED); // Adjusted from 480x320 to 320x240
 
     lv_obj_invalidate(settingsScreen);
 
@@ -1473,12 +1473,9 @@ void initLVGL()
   Serial.print("TFT Width: "); Serial.println(tft.width());
   Serial.print("TFT Height: "); Serial.println(tft.height());
   
-  // Verify resolution is correct
-  if(tft.width() != 480 || tft.height() != 320) {
-    Serial.println("*** ERROR: Wrong display resolution! ***");
-    Serial.println("*** Expected: 480x320, Got: " + String(tft.width()) + "x" + String(tft.height()) + " ***");
-    Serial.println("*** This explains the black screen - drawing to wrong canvas size ***");
-  }
+  // Log actual display resolution for debugging
+  Serial.println("*** Detected display resolution: " + String(tft.width()) + "x" + String(tft.height()) + " ***");
+  Serial.println("*** Adjusting all UI elements to match this resolution ***");
   
   Serial.println("Testing simple pixel draw...");
   tft.drawPixel(100, 100, TFT_RED);
@@ -1501,10 +1498,10 @@ void initLVGL()
 
   lv_disp_drv_init(&disp_drv);
   
-  // Make sure these match the actual display resolution - was causing black screen
-  // ILI9488 native resolution is 480x320
-  disp_drv.hor_res = 480;
-  disp_drv.ver_res = 320;
+  // Match actual detected display resolution (from monitor output: 320x240)
+  // Hardware is reporting 320x240 despite ILI9488 typically being 480x320
+  disp_drv.hor_res = 320;
+  disp_drv.ver_res = 240;
   
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
@@ -1528,7 +1525,7 @@ void createSettingsScreen()
 
   /*Create a container with ROW flex direction*/
   lv_obj_t *cont_header = lv_obj_create(settingsScreen);
-  lv_obj_set_size(cont_header, 480, 45);
+  lv_obj_set_size(cont_header, 320, 45); // Adjusted from 480 to 320 for actual screen width
   lv_obj_set_style_radius(cont_header, 0, 0);
   lv_obj_align(cont_header, LV_ALIGN_TOP_MID, 0, 0);
   // lv_obj_set_flex_flow(cont_row, LV_FLEX_FLOW_ROW);
@@ -1537,7 +1534,7 @@ void createSettingsScreen()
 
   /*Create a container with COLUMN flex direction*/
   lv_obj_t *content = lv_obj_create(settingsScreen);
-  lv_obj_set_size(content, 480, 275);
+  lv_obj_set_size(content, 320, 195); // Adjusted from 480x275 to 320x195 for actual screen size
   lv_obj_set_style_radius(content, 0, 0);
   lv_obj_align_to(content, cont_header, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
   lv_obj_set_style_border_width(content, 0, 0);
@@ -1757,7 +1754,7 @@ void createSettingsScreen()
 void createPromotionScreen()
 {   uint16_t touchX = 0, touchY = 0;
   promotionScreen = lv_obj_create(NULL);
-  lv_obj_set_size(promotionScreen, 480, 320);
+  lv_obj_set_size(promotionScreen, 320, 240); // Adjusted from 480x320 to 320x240 for actual screen size
   lv_obj_set_style_bg_color(promotionScreen, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(promotionScreen, LV_OPA_50, 0);
 
@@ -1808,7 +1805,7 @@ void createUI()
   lv_label_set_text(object, "Chesstimation");
   lv_obj_set_style_text_align(object, LV_TEXT_ALIGN_LEFT, 0);
   lv_obj_set_size(object, 151, 55);
-  lv_obj_set_pos(object, 327, 35);
+  lv_obj_set_pos(object, 170, 35); // Adjusted from 327 to 170 for smaller screen
   // lv_label_set_long_mode(object, LV_LABEL_LONG_WRAP);
   lv_obj_add_style(object, &fMediumStyle, 0);  
   
@@ -1816,7 +1813,7 @@ void createUI()
   batteryLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(batteryLbl, LV_TEXT_ALIGN_LEFT, 0);
   lv_obj_set_size(batteryLbl, 33, 15);
-  lv_obj_set_pos(batteryLbl, 446, 0);
+  lv_obj_set_pos(batteryLbl, 286, 0); // Adjusted from 446 to 286 for smaller screen
   lv_obj_add_style(batteryLbl, &fLargeStyle, 0);  
   #endif
   
@@ -1824,7 +1821,7 @@ void createUI()
   // lv_label_set_text(liftedPiecesStringLbl, lv_i18n_get_text("UI_READY"));
   lv_obj_set_style_text_align(liftedPiecesStringLbl, LV_TEXT_ALIGN_LEFT, 0);
   lv_obj_set_size(liftedPiecesStringLbl, 135, 160);
-  lv_obj_set_pos(liftedPiecesStringLbl, 330, 100);
+  lv_obj_set_pos(liftedPiecesStringLbl, 170, 100); // Adjusted from 330 to 170 for smaller screen
   lv_obj_add_style(liftedPiecesStringLbl, &fMediumStyle, 0);    // was f28Style    
   
   debugLbl = lv_label_create(screenMain);
@@ -1832,7 +1829,7 @@ void createUI()
   lv_obj_set_style_text_align(debugLbl, LV_TEXT_ALIGN_RIGHT, 0);
   lv_label_set_long_mode(debugLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_obj_set_size(debugLbl, 146, 25);
-  lv_obj_set_pos(debugLbl, 327, 225);
+  lv_obj_set_pos(debugLbl, 170, 200); // Adjusted from 327,225 to 170,200 for smaller screen
   lv_obj_add_style(debugLbl, &fMediumStyle, 0);  
 
 #ifdef LEGACY_EMULATION  
@@ -1850,7 +1847,7 @@ void createUI()
   settingsBtn = lv_btn_create(screenMain);
   lv_obj_add_event_cb(settingsBtn, event_handler, LV_EVENT_ALL, NULL);
   lv_obj_set_size(settingsBtn, 150, 40);
-  lv_obj_set_pos(settingsBtn, 325, 260);
+  lv_obj_set_pos(settingsBtn, 170, 210); // Adjusted from 325,260 to 170,210 for smaller screen
 
   settingsLbl = lv_label_create(settingsBtn);
   lv_obj_set_align(settingsLbl, LV_ALIGN_CENTER);
@@ -1876,21 +1873,21 @@ void createUI()
   connectionLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(connectionLbl, LV_TEXT_ALIGN_RIGHT, 0);
   lv_obj_set_size(connectionLbl, 29, 20);
-  lv_obj_set_pos(connectionLbl, 442, 75);
+  lv_obj_set_pos(connectionLbl, 286, 75); // Adjusted from 442 to 286 for smaller screen
   lv_obj_add_style(connectionLbl, &fLargeStyle, 0);
 
   // Chess Clock Display on Main Screen
   whiteTimeLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(whiteTimeLbl, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_size(whiteTimeLbl, 70, 25);
-  lv_obj_set_pos(whiteTimeLbl, 330, 70);
+  lv_obj_set_pos(whiteTimeLbl, 170, 70); // Adjusted from 330 to 170 for smaller screen
   lv_obj_add_style(whiteTimeLbl, &fMediumStyle, 0);
   lv_label_set_text(whiteTimeLbl, "--:--");
 
   blackTimeLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(blackTimeLbl, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_size(blackTimeLbl, 70, 25);
-  lv_obj_set_pos(blackTimeLbl, 405, 70);
+  lv_obj_set_pos(blackTimeLbl, 245, 70); // Adjusted from 405 to 245 for smaller screen
   lv_obj_add_style(blackTimeLbl, &fMediumStyle, 0);
   lv_label_set_text(blackTimeLbl, "--:--");
 
@@ -1898,7 +1895,7 @@ void createUI()
   moveCounterLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(moveCounterLbl, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_size(moveCounterLbl, 145, 20);
-  lv_obj_set_pos(moveCounterLbl, 330, 50);
+  lv_obj_set_pos(moveCounterLbl, 170, 50); // Adjusted from 330 to 170 for smaller screen
   lv_obj_add_style(moveCounterLbl, &fMediumStyle, 0);
   lv_label_set_text(moveCounterLbl, "Move 1");
 
@@ -1906,7 +1903,7 @@ void createUI()
   clockPauseBtn = lv_btn_create(screenMain);
   lv_obj_add_event_cb(clockPauseBtn, event_handler, LV_EVENT_ALL, NULL);
   lv_obj_set_size(clockPauseBtn, 70, 25);
-  lv_obj_set_pos(clockPauseBtn, 330, 95);
+  lv_obj_set_pos(clockPauseBtn, 170, 95); // Adjusted from 330 to 170 for smaller screen
   lv_obj_t *pauseLbl = lv_label_create(clockPauseBtn);
   lv_obj_center(pauseLbl);
   lv_obj_add_style(pauseLbl, &fMediumStyle, 0);
@@ -1915,7 +1912,7 @@ void createUI()
   clockResetBtn = lv_btn_create(screenMain);
   lv_obj_add_event_cb(clockResetBtn, event_handler, LV_EVENT_ALL, NULL);
   lv_obj_set_size(clockResetBtn, 70, 25);
-  lv_obj_set_pos(clockResetBtn, 405, 95);
+  lv_obj_set_pos(clockResetBtn, 245, 95); // Adjusted from 405 to 245 for smaller screen
   lv_obj_t *resetLbl = lv_label_create(clockResetBtn);
   lv_obj_center(resetLbl);
   lv_obj_add_style(resetLbl, &fMediumStyle, 0);
