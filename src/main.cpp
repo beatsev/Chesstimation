@@ -103,8 +103,8 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (480 * 40)
-// Previous buffer size was too small (320 * 40)
+#define DISP_BUF_SIZE (480 * 10)
+// Reduced buffer size to prevent DRAM overflow error
 lv_disp_draw_buf_t disp_buf;
 
 lv_color_t buf[DISP_BUF_SIZE];
@@ -1491,8 +1491,6 @@ void initLVGL()
   tft.fillRect(60, 60, 80, 30, TFT_YELLOW);
   delay(2000);
   
-  lv_init();
-  Serial.println("6e. LVGL init complete, setting up display buffer...");
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
 
