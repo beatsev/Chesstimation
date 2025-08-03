@@ -103,11 +103,11 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 60)
+#define DISP_BUF_SIZE (320 * 30)
 // Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
-lv_color_t buf[DISP_BUF_SIZE];
+lv_color_t *buf;
 
 lv_style_t fMediumStyle;
 lv_style_t fLargeStyle;
@@ -1400,6 +1400,13 @@ void initLVGL()
 
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
+
+  // Allocate buffer on heap to save DRAM
+  buf = (lv_color_t*) malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
+  if (buf == NULL) {
+    Serial.println("ERROR: Failed to allocate display buffer!");
+    return;
+  }
 
   lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
   Serial.println("6f. Display buffer initialized, setting up display driver...");
