@@ -1352,6 +1352,8 @@ static void event_handler(lv_event_t *e)
 
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
+    Serial.printf("FLUSH CALLED: area(%d,%d,%d,%d)\n", area->x1, area->y1, area->x2, area->y2);
+    
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
@@ -1365,6 +1367,7 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     
     tft.endWrite();
     
+    Serial.println("FLUSH COMPLETE");
     lv_disp_flush_ready(disp);
 }
 
@@ -1795,9 +1798,16 @@ void createPromotionScreen()
 }
 
 void createUI()
-{   uint16_t touchX = 0, touchY = 0;
+{   
+  Serial.println("UI: Creating main screen object...");
   screenMain = lv_obj_create(NULL);
+  if (screenMain == NULL) {
+    Serial.println("ERROR: Failed to create main screen!");
+    return;
+  }
+  Serial.println("UI: Main screen created successfully");
 
+  Serial.println("UI: Initializing styles...");
   // lv_style_init(&fSmallStyle);
   // lv_style_set_text_font(&fSmallStyle, &lv_font_montserrat_10);
     
@@ -2132,7 +2142,14 @@ void setup()
   initSerialPortCommunication();
 
   Serial.println("12. Loading main screen...");
+  Serial.printf("12a. screenMain pointer: %p\n", screenMain);
+  Serial.println("12b. Calling lv_scr_load...");
   lv_scr_load(screenMain);
+  Serial.println("12c. lv_scr_load completed");
+  
+  Serial.println("12d. Forcing LVGL task handler...");
+  lv_task_handler();
+  Serial.println("12e. Task handler completed");
 
   chessBoard.updateLiftedPiecesString();
 
