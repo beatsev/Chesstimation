@@ -103,7 +103,7 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 30)
+#define DISP_BUF_SIZE (320 * 60)
 // Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
@@ -1355,11 +1355,11 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    Serial.printf("FLUSH: %dx%d at (%d,%d)\n", w, h, area->x1, area->y1);
+    tft.startWrite();
+    tft.setAddrWindow(area->x1, area->y1, w, h);
+    tft.pushColors(&color_p->full, w * h, true);
+    tft.endWrite();
 
-    // TEST: Use TFT's own fill method instead of pushColor
-    tft.fillRect(area->x1, area->y1, w, h, TFT_RED);
-    
     lv_disp_flush_ready(disp);
 }
 
@@ -1401,12 +1401,13 @@ void initLVGL()
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
 
-  // Allocate buffer on heap to save DRAM
-  buf = (lv_color_t*) malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
+  // Allocate buffer in PSRAM to avoid DRAM overflow
+  buf = (lv_color_t*) ps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
   if (buf == NULL) {
-    Serial.println("ERROR: Failed to allocate display buffer!");
+    Serial.println("ERROR: Failed to allocate display buffer in PSRAM!");
     return;
   }
+  Serial.println("Display buffer allocated in PSRAM");
 
   lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
   Serial.println("6f. Display buffer initialized, setting up display driver...");
@@ -1415,9 +1416,9 @@ void initLVGL()
 
   lv_disp_drv_init(&disp_drv);
   
-  // Use ACTUAL hardware resolution (320x240) not upstream (480x320)
-  disp_drv.hor_res = 320;
-  disp_drv.ver_res = 240;
+  // Use upstream working resolution: 480x320 (landscape)
+  disp_drv.hor_res = 480;
+  disp_drv.ver_res = 320;
   
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
@@ -2036,17 +2037,6 @@ void setup()
 
   Serial.println("12. Loading main screen...");
   lv_scr_load(screenMain);
-  
-  // FORCE a simple render test
-  Serial.println("12a. Creating test label...");
-  lv_obj_t *label = lv_label_create(lv_scr_act());
-  lv_label_set_text(label, "TEST");
-  lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-  
-  Serial.println("12b. Forcing LVGL refresh...");
-  lv_obj_invalidate(lv_scr_act());
-  lv_task_handler();
-  Serial.println("12c. Test complete");
 
   chessBoard.updateLiftedPiecesString();
 
