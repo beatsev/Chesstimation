@@ -103,7 +103,7 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 60)
+#define DISP_BUF_SIZE (320 * 20)
 // Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
@@ -1401,13 +1401,13 @@ void initLVGL()
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
 
-  // Allocate buffer in PSRAM to avoid DRAM overflow
-  buf = (lv_color_t*) ps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
+  // Allocate buffer on heap 
+  buf = (lv_color_t*) malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
   if (buf == NULL) {
-    Serial.println("ERROR: Failed to allocate display buffer in PSRAM!");
+    Serial.println("ERROR: Failed to allocate display buffer!");
     return;
   }
-  Serial.println("Display buffer allocated in PSRAM");
+  Serial.println("Display buffer allocated successfully");
 
   lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
   Serial.println("6f. Display buffer initialized, setting up display driver...");
