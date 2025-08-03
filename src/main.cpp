@@ -103,7 +103,7 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 10)
+#define DISP_BUF_SIZE (320 * 20)
 // Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
@@ -1459,6 +1459,14 @@ void initLVGL()
   delay(3000);
   
   Serial.println("6e. Text test complete, initializing LVGL...");
+  
+  // CRITICAL: Ensure backlight is ON before continuing
+  Serial.println("6e1. Setting up backlight control...");
+  ledcSetup(0, 5000, 8); // 5kHz PWM, 8-bit resolution
+  ledcAttachPin(TFT_BL, 0);
+  ledcWrite(0, 255); // Maximum brightness
+  Serial.println("6e2. Backlight set to maximum brightness");
+  delay(1000); // Give time for backlight to stabilize
 
   // Test for brightness control: did not work...
   // tft.writecommand(0x53);

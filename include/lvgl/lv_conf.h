@@ -49,7 +49,7 @@
 #define LV_MEM_CUSTOM 0
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (12U * 1024U)          /*[bytes] - reduced from 16K to save memory*/
+    #define LV_MEM_SIZE (24U * 1024U)          /*[bytes] - increased from 12K to 24K for stability*/
 
     /*Set an address for the memory pool instead of allocating it as a normal array. Can be in external SRAM too.*/
     #define LV_MEM_ADR 0     /*0: unused*/
@@ -481,9 +481,9 @@
 
 #define LV_USE_CANVAS     0
 
-#define LV_USE_CHECKBOX   0
+#define LV_USE_CHECKBOX   1
 
-#define LV_USE_DROPDOWN   0   /*Requires: lv_label*/
+#define LV_USE_DROPDOWN   1   /*Requires: lv_label*/
 
 #define LV_USE_IMG        1   /*Requires: lv_label*/
 
@@ -500,7 +500,7 @@
     #define LV_ROLLER_INF_PAGES 7 /*Number of extra "pages" when the roller is infinite*/
 #endif
 
-#define LV_USE_SLIDER     0   /*Requires: lv_bar*/
+#define LV_USE_SLIDER     1   /*Requires: lv_bar*/
 
 #define LV_USE_SWITCH     0
 
@@ -538,7 +538,7 @@
 
 #define LV_USE_COLORWHEEL 0
 
-#define LV_USE_IMGBTN     0
+#define LV_USE_IMGBTN     1
 
 #define LV_USE_KEYBOARD   0
 
@@ -550,7 +550,7 @@
 
 #define LV_USE_METER      0
 
-#define LV_USE_MSGBOX     0
+#define LV_USE_MSGBOX     1
 
 #define LV_USE_SPAN       0
 #if LV_USE_SPAN
@@ -597,7 +597,7 @@
  *----------*/
 
 /*A layout similar to Flexbox in CSS.*/
-#define LV_USE_FLEX 0
+#define LV_USE_FLEX 1
 
 /*A layout similar to Grid in CSS.*/
 #define LV_USE_GRID 0
