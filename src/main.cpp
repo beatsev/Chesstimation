@@ -184,19 +184,8 @@ byte debugPrint(const char *message)
 
 void startTouchCalibration()
 {
-    // object = lv_msgbox_create(NULL, "Touch Calibration", "Touch the corners with the white line\nin counter clockwise order", NULL, true);
-
-    // lv_obj_add_style(object, &fLargeStyle, 0);
-    // lv_obj_set_size(object, 480, 320);
-    // lv_obj_center(object);
-    // lv_obj_clear_flag(object, LV_OBJ_FLAG_SCROLLABLE);
-
-    tft.calibrateTouch(calibrationData, TFT_WHITE, TFT_RED, 15);
-    tft.fillRect(480-16, 320-16, 16, 16, TFT_RED);
-
-    lv_obj_invalidate(settingsScreen);
-
-    // lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+  // Touch calibration disabled - not supported by current TFT_eSPI config
+  Serial.println("Touch calibration skipped - not available");
 }
 
 byte debugPrintln(const char *message)
@@ -1201,14 +1190,9 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 {
-   uint16_t touchX, touchY;
-
-   bool touched = tft.getTouch( &touchX, &touchY, 600 );
-
-   if( !touched )
-   {
-      data->state = LV_INDEV_STATE_REL;
-   }
+   // Touch support disabled - not available in current TFT_eSPI config
+   data->state = LV_INDEV_STATE_REL;
+}
    else
    {
       data->state = LV_INDEV_STATE_PR;
