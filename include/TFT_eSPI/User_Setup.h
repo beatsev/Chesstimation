@@ -34,7 +34,8 @@
 #endif
 
 #ifdef PicoResTouchLCD_35
-#define ILI9488_DRIVER
+// Try ILI9341 driver instead of ILI9488 (detected as 240x320)
+#define ILI9341_DRIVER
 #define TFT_INVERSION_ON   
 #endif
 
