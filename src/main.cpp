@@ -1355,11 +1355,17 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
+    Serial.printf("FLUSH: %dx%d at (%d,%d)\n", w, h, area->x1, area->y1);
+
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
-    tft.pushColors(&color_p->full, w * h, true);
+    
+    // TEST: Just fill with red instead of using LVGL data
+    for(uint32_t i = 0; i < w * h; i++) {
+        tft.pushColor(0xF800); // Red in RGB565
+    }
+    
     tft.endWrite();
-
     lv_disp_flush_ready(disp);
 }
 
@@ -2036,6 +2042,17 @@ void setup()
 
   Serial.println("12. Loading main screen...");
   lv_scr_load(screenMain);
+  
+  // FORCE a simple render test
+  Serial.println("12a. Creating test label...");
+  lv_obj_t *label = lv_label_create(lv_scr_act());
+  lv_label_set_text(label, "TEST");
+  lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+  
+  Serial.println("12b. Forcing LVGL refresh...");
+  lv_obj_invalidate(lv_scr_act());
+  lv_task_handler();
+  Serial.println("12c. Test complete");
 
   chessBoard.updateLiftedPiecesString();
 
