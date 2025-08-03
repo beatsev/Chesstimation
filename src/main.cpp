@@ -1629,47 +1629,30 @@ void createUI()
 
 void setup()
 {
-/*
-  pinMode(POWER_SAVE_PIN, OUTPUT);
-  gpio_hold_dis(POWER_SAVE_PIN);
-  digitalWrite(POWER_SAVE_PIN, HIGH);
-*/
+  Serial.begin(115200);
+  Serial.println("=== Simple TFT Test ===");
+  
+  // Initialize TFT
+  tft.begin();
+  tft.setRotation(1);
+  
+  // Clear screen and draw simple elements
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.println("CHESSTIMATION");
+  
+  tft.drawRect(10, 50, 100, 50, TFT_RED);
+  tft.fillRect(20, 60, 80, 30, TFT_GREEN);
+  
+  Serial.println("TFT test complete");
+}
 
-  pinMode(TFT_BL, OUTPUT);
-  // digitalWrite(TFT_BL, HIGH);    
-  ledcSetup(0, 5000, 8);
-  ledcAttachPin(TFT_BL, 0);
-
-  gpio_hold_dis((gpio_num_t)TFT_BL); 
-
-  // digitalWrite(GPIO_NUM_16, LOW);    
-/*
-  gpio_hold_dis(GPIO_NUM_17);
-  gpio_hold_dis(GPIO_NUM_18);
-  gpio_hold_dis(GPIO_NUM_19);
-  gpio_hold_dis(GPIO_NUM_23);
-  gpio_hold_dis(GPIO_NUM_5);
-  gpio_hold_dis(GPIO_NUM_21);
-  gpio_hold_dis(GPIO_NUM_0);
-  gpio_hold_dis(GPIO_NUM_4);
-  gpio_hold_dis(GPIO_NUM_2);
-*/
-
-  mephisto.initPorts();
-  // displayLEDstartUpSequence();
-
-  chessBoard.startPosition(0);
-  connection = BLE;
-  // ledcWrite(0, 255);
-  loadBoardSettings();
-  ledcWrite(0, brightness);
-  // if(chessBoard.emulation == 0 && connection == BLE)
-  //   connection = USB;
-
-  for (int i = 0; i < 8; i++)
-  {
-    chessBoard.lastRawRow[i] = mephisto.readRow(i);
-  }
+void loop()
+{
+  delay(1000);
+}
 
   chessBoard.generateSerialBoardMessage();
   // chessBoard.copyPieceSetupToRaw(chessBoard.lastRawRow);
