@@ -90,7 +90,7 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 60)
+#define DISP_BUF_SIZE (320 * 20)
 // #define DISP_BUF_SIZE (480 * 10)
 lv_disp_draw_buf_t disp_buf;
 
