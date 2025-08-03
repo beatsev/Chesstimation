@@ -103,7 +103,7 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 20)
+#define DISP_BUF_SIZE (320 * 60)
 // Set to actual screen size (320x240) to prevent drawing outside visible area
 lv_disp_draw_buf_t disp_buf;
 
@@ -1352,22 +1352,14 @@ static void event_handler(lv_event_t *e)
 
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
-    Serial.printf("FLUSH CALLED: area(%d,%d,%d,%d)\n", area->x1, area->y1, area->x2, area->y2);
-    
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
-    
-    // TEMPORARY: Force all pixels to RED for debugging
-    for(uint32_t i = 0; i < w * h; i++) {
-        tft.pushColor(TFT_RED);
-    }
-    
+    tft.pushColors(&color_p->full, w * h, true);
     tft.endWrite();
-    
-    Serial.println("FLUSH COMPLETE");
+
     lv_disp_flush_ready(disp);
 }
 
@@ -1402,108 +1394,10 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
 }
 
 void initLVGL()
-{   uint16_t touchX = 0, touchY = 0;
-  Serial.println("6a. Starting TFT initialization...");
-  
-  // Test SPI pins first
-  Serial.println("6a1. Testing SPI pin configuration...");
-  Serial.print("TFT_MOSI: "); Serial.println(TFT_MOSI);
-  Serial.print("TFT_MISO: "); Serial.println(TFT_MISO);
-  Serial.print("TFT_SCLK: "); Serial.println(TFT_SCLK);
-  Serial.print("TFT_CS: "); Serial.println(TFT_CS);
-  Serial.print("TFT_DC: "); Serial.println(TFT_DC);
-  Serial.print("TFT_RST: "); Serial.println(TFT_RST);
-  Serial.print("TFT_BL: "); Serial.println(TFT_BL);
-  
-  // Test basic GPIO before TFT init
-  Serial.println("6a2. Testing basic GPIO control...");
-  pinMode(TFT_CS, OUTPUT);
-  pinMode(TFT_DC, OUTPUT);
-  digitalWrite(TFT_CS, HIGH);
-  digitalWrite(TFT_DC, HIGH);
-  delay(100);
-  digitalWrite(TFT_CS, LOW);
-  digitalWrite(TFT_DC, LOW);
-  delay(100);
-  Serial.println("6a3. GPIO test complete");
-  
-  Serial.println("6a4. Starting TFT.begin()...");
+{
   tft.begin();
-  Serial.println("6b. TFT begin complete - checking if it worked...");
-  
-  delay(500); // Give more time for initialization
-
   tft.setRotation(1);
-  Serial.println("6c. TFT rotation set, testing display colors...");
-  
-  // Test different colors to verify display is working
-  Serial.println("6c1. Testing RED screen...");
-  tft.fillScreen(TFT_RED);
-  delay(2000);
-  
-  Serial.println("6c2. Testing GREEN screen...");
-  tft.fillScreen(TFT_GREEN);
-  delay(2000);
-  
-  Serial.println("6c3. Testing BLUE screen...");
-  tft.fillScreen(TFT_BLUE);
-  delay(2000);
-  
-  Serial.println("6c4. Testing WHITE screen...");
-  tft.fillScreen(TFT_WHITE);
-  delay(2000);
-  
-  Serial.println("6d. Color tests complete, clearing to black...");
-  tft.fillScreen(TFT_BLACK);
-  
-  // Test text display
-  Serial.println("6d1. Testing text display...");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(3);
-  tft.setCursor(50, 100);
-  tft.println("CHESSTIMATION");
-  tft.setCursor(50, 150);
-  tft.println("DISPLAY TEST");
-  delay(3000);
-  
-  Serial.println("6e. Text test complete, initializing LVGL...");
-  
-  // CRITICAL: Ensure backlight is ON before continuing
-  Serial.println("6e1. Setting up backlight control...");
-  ledcSetup(0, 5000, 8); // 5kHz PWM, 8-bit resolution
-  ledcAttachPin(TFT_BL, 0);
-  ledcWrite(0, 255); // Maximum brightness
-  Serial.println("6e2. Backlight set to maximum brightness");
-  delay(1000); // Give time for backlight to stabilize
 
-  // Test for brightness control: did not work...
-  // tft.writecommand(0x53);
-  // tft.writedata(0xFF);
-  // tft.writecommand(0x51);
-  // tft.writedata(20);
-
-  // Test basic TFT commands with delays and verification
-  Serial.println("=== TESTING TFT COMMANDS STEP BY STEP ===");
-  
-  Serial.println("Testing TFT width/height...");
-  Serial.print("TFT Width: "); Serial.println(tft.width());
-  Serial.print("TFT Height: "); Serial.println(tft.height());
-  
-  // Log actual display resolution for debugging
-  Serial.println("*** Detected display resolution: " + String(tft.width()) + "x" + String(tft.height()) + " ***");
-  Serial.println("*** Adjusting all UI elements to match this resolution ***");
-  
-  Serial.println("Testing simple pixel draw...");
-  tft.drawPixel(100, 100, TFT_RED);
-  tft.drawPixel(101, 100, TFT_GREEN);
-  tft.drawPixel(102, 100, TFT_BLUE);
-  delay(2000);
-  
-  Serial.println("Testing simple rectangle...");
-  tft.drawRect(50, 50, 100, 50, TFT_WHITE);
-  tft.fillRect(60, 60, 80, 30, TFT_YELLOW);
-  delay(2000);
-  
   lv_init();
   Serial.println("6e. LVGL init complete, setting up display buffer...");
 
@@ -1514,10 +1408,9 @@ void initLVGL()
 
   lv_disp_drv_init(&disp_drv);
   
-  // Match actual detected display resolution (from monitor output: 320x240)
-  // Hardware is reporting 320x240 despite ILI9488 typically being 480x320
-  disp_drv.hor_res = 320;
-  disp_drv.ver_res = 240;
+  // Use upstream working resolution: 480x320 (landscape)
+  disp_drv.hor_res = 480;
+  disp_drv.ver_res = 320;
   
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
@@ -1799,15 +1692,8 @@ void createPromotionScreen()
 
 void createUI()
 {   
-  Serial.println("UI: Creating main screen object...");
   screenMain = lv_obj_create(NULL);
-  if (screenMain == NULL) {
-    Serial.println("ERROR: Failed to create main screen!");
-    return;
-  }
-  Serial.println("UI: Main screen created successfully");
 
-  Serial.println("UI: Initializing styles...");
   // lv_style_init(&fSmallStyle);
   // lv_style_set_text_font(&fSmallStyle, &lv_font_montserrat_10);
     
@@ -2142,14 +2028,7 @@ void setup()
   initSerialPortCommunication();
 
   Serial.println("12. Loading main screen...");
-  Serial.printf("12a. screenMain pointer: %p\n", screenMain);
-  Serial.println("12b. Calling lv_scr_load...");
   lv_scr_load(screenMain);
-  Serial.println("12c. lv_scr_load completed");
-  
-  Serial.println("12d. Forcing LVGL task handler...");
-  lv_task_handler();
-  Serial.println("12e. Task handler completed");
 
   chessBoard.updateLiftedPiecesString();
 
