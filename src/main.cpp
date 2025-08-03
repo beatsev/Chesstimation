@@ -1357,15 +1357,9 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
     Serial.printf("FLUSH: %dx%d at (%d,%d)\n", w, h, area->x1, area->y1);
 
-    tft.startWrite();
-    tft.setAddrWindow(area->x1, area->y1, w, h);
+    // TEST: Use TFT's own fill method instead of pushColor
+    tft.fillRect(area->x1, area->y1, w, h, TFT_RED);
     
-    // TEST: Just fill with red instead of using LVGL data
-    for(uint32_t i = 0; i < w * h; i++) {
-        tft.pushColor(0xF800); // Red in RGB565
-    }
-    
-    tft.endWrite();
     lv_disp_flush_ready(disp);
 }
 
