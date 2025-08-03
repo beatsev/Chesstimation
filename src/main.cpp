@@ -1351,15 +1351,20 @@ static void event_handler(lv_event_t *e)
 }
 
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
-{   uint16_t touchX = 0, touchY = 0;
+{
+    Serial.printf("FLUSH: area(%d,%d,%d,%d)\n", area->x1, area->y1, area->x2, area->y2);
+    
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
+    
+    Serial.printf("FLUSH: w=%d, h=%d, pixels=%d\n", w, h, w*h);
 
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
     tft.pushColors(&color_p->full, w * h, true);
     tft.endWrite();
-
+    
+    Serial.println("FLUSH: complete");
     lv_disp_flush_ready(disp);
 }
 
@@ -2128,6 +2133,15 @@ void setup()
 
   Serial.println("12. Loading main screen...");
   lv_scr_load(screenMain);
+  
+  Serial.println("12a. Forcing LVGL task handler...");
+  lv_task_handler();
+  
+  Serial.println("12b. Forcing display refresh...");
+  lv_obj_invalidate(lv_scr_act());
+  lv_task_handler();
+  
+  Serial.println("12c. Main screen load complete");
 
   chessBoard.updateLiftedPiecesString();
 
@@ -2176,6 +2190,12 @@ void loop()
     oldMillis=actMillis;
   }
 #endif  
+
+  static unsigned long lastDebug = 0;
+  if (millis() - lastDebug > 5000) {
+    Serial.println("LOOP: lv_task_handler() called");
+    lastDebug = millis();
+  }
 
   lv_task_handler();
   
