@@ -21,6 +21,7 @@
 #define ABOUT_TEXT  "\nby Dr. Andreas Petersik\nandreas.petersik@gmail.com\n\nbuilt: Dec 6th, 2023"
 // #define BOARD_TEST
 
+#define TFT_BL 16  // Backlight control pin
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <esp_sleep.h>
@@ -1473,7 +1474,7 @@ void createUI()
   lv_style_set_text_font(&fLargeStyle, &montserrat_umlaute22);  // was 22
     
   lv_style_init(&fExtraLargeStyle);
-  lv_style_set_text_font(&fExtraLargeStyle, &lv_font_montserrat_28); // was 28
+  lv_style_set_text_font(&fExtraLargeStyle, &montserrat_umlaute22); // was 28
     
   object = lv_label_create(screenMain);
   lv_label_set_text(object, "Chesstimation");

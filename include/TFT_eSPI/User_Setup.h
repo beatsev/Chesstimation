@@ -36,8 +36,10 @@
 #ifdef PicoResTouchLCD_35
 #define ILI9488_DRIVER
 #define TFT_INVERSION_ON   
-#define TOUCH_CS 21    // Chip select pin (T_CS) of touch screen
 #endif
+
+// Touch support for both display types
+#define TOUCH_CS 21    // Chip select pin (T_CS) of touch screen
 
 #define TFT_MISO 19
 #define TFT_MOSI 23
