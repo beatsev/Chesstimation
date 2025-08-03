@@ -1193,22 +1193,6 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
    // Touch support disabled - not available in current TFT_eSPI config
    data->state = LV_INDEV_STATE_REL;
 }
-   else
-   {
-      data->state = LV_INDEV_STATE_PR;
-
-      /*Set the coordinates*/
-      data->point.x = touchX;
-      data->point.y = touchY;
-
-      // debugPrint( "Data x " );
-      // debugPrintln( touchX );
-
-      // debugPrint( "Data y " );
-      // debugPrintln( touchY );
-   }
-}
-
 void initLVGL()
 {
   tft.begin();
