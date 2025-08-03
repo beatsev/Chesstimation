@@ -1421,9 +1421,9 @@ void initLVGL()
 
   lv_disp_drv_init(&disp_drv);
   
-  // Use upstream working resolution: 480x320 (landscape)
-  disp_drv.hor_res = 480;
-  disp_drv.ver_res = 320;
+  // Use ACTUAL hardware resolution (320x240) not upstream (480x320)
+  disp_drv.hor_res = 320;
+  disp_drv.ver_res = 240;
   
   disp_drv.flush_cb = my_disp_flush;
   disp_drv.draw_buf = &disp_buf;
