@@ -17,8 +17,8 @@
     along with Chesstimation.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#define VERSION     "Chesstimation 1.7.1"
-#define ABOUT_TEXT  "\nby Dr. Andreas Petersik\nandreas.petersik@gmail.com\n\nbuilt: Oct 30th, 2025"
+#define VERSION     "Chesstimation 1.7.3"
+#define ABOUT_TEXT  "\nby Dr. Andreas Petersik\nandreas.petersik@gmail.com\n\nbuilt: Nov 8th, 2025"
 // #define BOARD_TEST
 
 #include <Arduino.h>
@@ -62,6 +62,7 @@ Mephisto mephisto;
 Board chessBoard;
 BluetoothSerial SerialBT;
 
+static void extinguishBoardLEDs();
 char modeBleAdvertisedName[] = "MILLENNIUM CHESS";
 
 int millBLEinitialized = 0;
@@ -97,11 +98,12 @@ TFT_eSPI tft = TFT_eSPI();
 #define TFT_VER_RES   320
 
 /*LVGL draw into this buffer, 1/10 screen size usually works well. The size is in bytes*/
-#define DISP_BUF_SIZE (320 * 96)
+#define DISP_BUF_SIZE (480 * 64)
+// #define DISP_BUF_SIZE (480 * 320)
 // #define DISP_BUF_SIZE (320 * 60) // old size used for LVGL 8.x
 // #define DISP_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 6 * (LV_COLOR_DEPTH / 8)) // leads to not working White Pawn
-// lv_color_t *dispBuf;//[DISP_BUF_SIZE]; 
-void *dispBuf;//[DISP_BUF_SIZE]; 
+void *dispBuf; // This creates the display buffer at runtime
+// lv_color_t dispBuf[DISP_BUF_SIZE]; // This one creates the display buffer at compile time
 
 lv_display_t * disp;
 
@@ -135,7 +137,7 @@ lv_obj_t *ui_settings_obj, *offBtnLbl, *newGameLbl, *brightLbl, *backLbl, *setti
 lv_obj_t *promotionBtnW, *promotionBtnImageW, *promotionBtnB, *promotionBtnImageB;
 lv_obj_t *wp[8], *bp[8], *wk, *bk, *wn1, *bn1, *wn2, *bn2, *wb1, *bb1, *wb2, *bb2, *wr1, *br1, *wr2, *br2, *wq1, *bq1, *wq2, *bq2;
 
-void displayLEDstartUpSequence()
+void displayLEDshutdownSequence()
 {
   for(int i=0; i<64; i++)
   {
@@ -1020,6 +1022,7 @@ static void slider_event_cb(lv_event_t *e)
 
 void switchOff(void)
 {
+  // TODO: Disconnect from Serial / Bluetooth and BLE?
   saveBoardSettings();
 
   tft.writecommand(0x10); // TFT Display Sleep mode on
@@ -1043,7 +1046,7 @@ void switchOff(void)
 
   esp_sleep_enable_ext0_wakeup(TOUCH_PANEL_IRQ_PIN, LOW);
 
-  displayLEDstartUpSequence();
+  displayLEDshutdownSequence();
   // Switch all LEDs off before going into sleep mode:
   for(int i = 0; i<8; i++)
   {
@@ -1068,7 +1071,7 @@ void switchOff(void)
 
 }
 
-void updatePromotionButton()
+void updatePromotionButtons()
 {
   switch (chessBoard.promotionPieceW)
   {
@@ -1180,8 +1183,9 @@ static void event_handler(lv_event_t *e)
       resetOldBoard();
       updatePiecesOnBoard();
       chessBoard.promotionPieceW = chessBoard.promotionPieceB = 'Q';
-      updatePromotionButton();
+      // updatePromotionButtons();
 
+      extinguishBoardLEDs();
       physicalConformity = (lv_obj_get_state(certaboCalibCB) & LV_STATE_CHECKED); // Physical conformity not checked when using calibration Queens in Certabo Emulation!
 
       lv_screen_load(screenMain);
@@ -1189,7 +1193,6 @@ static void event_handler(lv_event_t *e)
     else if (obj == exitSettingsBtn)
     {
       lv_scr_load(screenMain);
-      updatePromotionButton();
     }
     // Promotion Button Event:
     if (obj == promotionBtnW)
@@ -1210,7 +1213,7 @@ static void event_handler(lv_event_t *e)
       {
         chessBoard.promotionPieceW = 'Q';
       }
-      updatePromotionButton();
+      updatePromotionButtons();
     }
     if (obj == promotionBtnB)
     {
@@ -1230,7 +1233,7 @@ static void event_handler(lv_event_t *e)
       {
         chessBoard.promotionPieceB = 'Q';
       }
-      updatePromotionButton();
+      updatePromotionButtons();
     }
   }
   else if (code == LV_EVENT_VALUE_CHANGED)
@@ -1311,6 +1314,14 @@ static void event_handler(lv_event_t *e)
   }
 }
 
+// Empty all LED info to switch off LEDs, e.g. after game restart:
+void extinguishBoardLEDs()
+{
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      mephistoLED[i][j] = 0;
+}
+
 void my_disp_flush(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -1369,7 +1380,7 @@ void initLVGL()
   
   disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
   dispBuf = heap_caps_malloc(DISP_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-
+  
   lv_display_set_flush_cb(disp, my_disp_flush);
   lv_display_set_buffers(disp, dispBuf, NULL, DISP_BUF_SIZE, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
@@ -2147,6 +2158,7 @@ void loop()
       lv_label_set_text(liftedPiecesStringLbl, chessBoard.liftedPiecesDisplayString);
     }
     updatePiecesOnBoard();
+    updatePromotionButtons();
   }
 
   for (int row = 0; row < 8; row++)
@@ -2202,14 +2214,25 @@ void loop()
   //   chessBoard.boardMessage[65]=0;
   // }
 
-  if (lifted > 0 || setBack > 0 || chessBoard.emulation == 0 || ((actMillis-oldMessageMillis>eeprom[3]*4) && eeprom[2]==2)) // Certabo boards sends position even when no change happend
-  { 
+  // Idea: Set Chessboard message at least once after start of the game:
+  // Main testing needs only done with Chess connect. Or I need to reach out to the programmer of Chess COnnect
+  // Also test Chess Connect with my original Millennium Board
+  if (lifted > 0 ||
+      setBack > 0 ||
+      // Certabo boards sends position even when no change happend:
+      chessBoard.emulation == 0 ||
+      // Auto-update on Millennium boards:
+      // Shortest possible timing for Chesstimation module seems to be ~500ms
+      // ((actMillis-oldMessageMillis>eeprom[3]*4) && eeprom[2]==2) ||
+      // ((actMillis - oldMessageMillis > 500) && eeprom[2] == 2) ||
+      ((actMillis - oldMessageMillis > 500) && (eeprom[2] == 0 || eeprom[2] == 2)))
+  {
     sendMessageToChessBoard(chessBoard.boardMessage);
     oldMessageMillis = actMillis;
   }
-  if (chessBoard.emulation == 0 && rows == 0)
-  {
-    // delay(100);
-  }
+  // if ((chessBoard.emulation == 0 || eeprom[2]==0 ) && rows == 0)
+  // {
+  //   delay(100);
+  // }
   writeToIndex = 0;
 }

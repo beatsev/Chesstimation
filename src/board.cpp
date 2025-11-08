@@ -52,7 +52,8 @@ void Board::updateMilleniumLEDs(const char* ledMessage) {
             // if(result==0x55) result = 0x33;
             // if(result==0xFF) result = 0xCC;
             milleniumLEDs[8-col][8-row]=result;
-            // if(milleniumLEDs[8-col][8-row]>0) milleniumLEDs[8-col][8-row]=0xFF; // Fix for alternate LED bug in BearChess
+            // Fix for alternate LED bug in BearChess (older version?) and Chessconnect 
+            if(milleniumLEDs[8-col][8-row]>0) milleniumLEDs[8-col][8-row]=0xFF; 
             messageIdx+=2;
         }
     }
@@ -411,6 +412,9 @@ void Board::setPieceBackTo(byte boardIndex)
         if (liftedIdx >= 0)
         {
             piece[boardIndex] = getNextPromotionPieceForWhite(0x00ff & piecesLifted[liftedIdx]);
+            // When a promotion is done, set next promotion to Queen as default again:
+            promotionPieceW = 'Q';
+
         }
     }
     // Check if black pawn was moved from row 2 to 1, then promote! (Internally rows are in reverse order 0-7 is 8-1)
@@ -422,6 +426,8 @@ void Board::setPieceBackTo(byte boardIndex)
         if (liftedIdx >= 0)
         {
             piece[boardIndex] = getNextPromotionPieceForBlack(0x00ff & piecesLifted[liftedIdx]);
+            // When a promotion is done, set next promotion to Queen as default again:
+            promotionPieceB = 'Q';
         }
     }
     else
