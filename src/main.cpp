@@ -1,5 +1,5 @@
 /*  
-    Copyright 2021, 2022, 2023 Andreas Petersik (andreas.petersik@gmail.com)
+    Copyright 2021, 2022, 2023, 2024, 2025 Andreas Petersik (andreas.petersik@gmail.com)
     
     This file is part of the Chesstimation Project.
 
@@ -17,8 +17,8 @@
     along with Chesstimation.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#define VERSION     "Chesstimation 1.5"
-#define ABOUT_TEXT  "\nby Dr. Andreas Petersik\nandreas.petersik@gmail.com\n\nbuilt: Dec 6th, 2023"
+#define VERSION     "Chesstimation 1.7.3"
+#define ABOUT_TEXT  "\nby Dr. Andreas Petersik\nandreas.petersik@gmail.com\n\nbuilt: Nov 8th, 2025"
 // #define BOARD_TEST
 
 #include <Arduino.h>
@@ -26,10 +26,12 @@
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
 #include <driver/adc.h>
+#include <BluetoothSerial.h>
 #include "lv_i18n.h"
 
 #include <BLEDevice.h>
 #include <BLE2902.h>
+#include "BLEHIDDevice.h"
 
 // For emulations:
 #include <thread>
@@ -54,15 +56,20 @@
 #define BOARD_SETUP_FILE  "/board_setup"
 #define SQUARE_SIZE         40
 
+// #define PEGASUS
 
 Mephisto mephisto;
 Board chessBoard;
+BluetoothSerial SerialBT;
+
+static void extinguishBoardLEDs();
+char modeBleAdvertisedName[] = "MILLENNIUM CHESS";
 
 int millBLEinitialized = 0;
 int physicalConformity = 0;
 
-enum connectionType {USB, BLE} connection;  // Should be same order as in UI
-enum languageType {EN, ES, DE} language = DE;        // Should be same order as in UI, default to German
+enum connectionType {USB, BT, BLE} connection;  // Should be same order as in UI
+enum languageType {EN, ES, DE} language;        // Should be same order as in UI
 
 byte readRawRow[8];
 byte led_buffer[8];
@@ -71,8 +78,8 @@ byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
 byte oldBoard[64];
 int brightness = 255;
+
 uint16_t calibrationData[5];
-bool promotingWhitePawn = true;  // Track which color pawn is promoting
 
 //BLE objects
 BLEServer *pServer = NULL;
@@ -86,11 +93,19 @@ std::string replyString;
 
 TFT_eSPI tft = TFT_eSPI();
 
-#define DISP_BUF_SIZE (320 * 60)
-// #define DISP_BUF_SIZE (480 * 10)
-lv_disp_draw_buf_t disp_buf;
+/*Set to your screen resolution*/
+#define TFT_HOR_RES   480
+#define TFT_VER_RES   320
 
-lv_color_t buf[DISP_BUF_SIZE];
+/*LVGL draw into this buffer, 1/10 screen size usually works well. The size is in bytes*/
+#define DISP_BUF_SIZE (480 * 64)
+// #define DISP_BUF_SIZE (480 * 320)
+// #define DISP_BUF_SIZE (320 * 60) // old size used for LVGL 8.x
+// #define DISP_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 6 * (LV_COLOR_DEPTH / 8)) // leads to not working White Pawn
+void *dispBuf; // This creates the display buffer at runtime
+// lv_color_t dispBuf[DISP_BUF_SIZE]; // This one creates the display buffer at compile time
+
+lv_display_t * disp;
 
 lv_style_t fMediumStyle;
 lv_style_t fLargeStyle;
@@ -113,16 +128,16 @@ LV_IMG_DECLARE(BN40);
 LV_IMG_DECLARE(WR40);
 LV_IMG_DECLARE(BR40);
 
-lv_disp_drv_t disp_drv;
-lv_indev_drv_t indev_drv;
+lv_indev_t * indev;
 
 lv_obj_t *settingsScreen, *settingsBtn, *btn2, *screenMain, *liftedPiecesLbl, *liftedPiecesStringLbl, *debugLbl, *chessBoardCanvas, *chessBoardLbl, *batteryLbl;
-lv_obj_t *labelA1, *exitSettingsBtn, *offBtn, *certaboCalibCB, *restartBtn, *certaboCB, *chesslinkCB, *languageLbl, *flippedCB, *testCB;
+lv_obj_t *labelA1, *exitSettingsBtn, *offBtn, *certaboCalibCB, *restartBtn, *certaboCB, *chesslinkCB, *languageLbl, *flippedCB, *pegasusCB, *testCB;
 lv_obj_t *square[64], *dummy1Btn, *calibrateBtn, *object, *brightnessSlider, *connectionLbl, *commLbl, *emulatorsBtn, *langBtn, *langLbl;
-lv_obj_t *ui_settings_obj, *offBtnLbl, *newGameLbl, *brightLbl, *backLbl, *settingsLbl, *emulationLbl, *langDd, *connectionDd, *promotionScreen, *promotionQueenBtn, *promotionRookBtn, *promotionBishopBtn, *promotionKnightBtn;
+lv_obj_t *ui_settings_obj, *offBtnLbl, *newGameLbl, *brightLbl, *backLbl, *settingsLbl, *emulationLbl, *langDd, *connectionDd;
+lv_obj_t *promotionBtnW, *promotionBtnImageW, *promotionBtnB, *promotionBtnImageB;
 lv_obj_t *wp[8], *bp[8], *wk, *bk, *wn1, *bn1, *wn2, *bn2, *wb1, *bb1, *wb2, *bb2, *wr1, *br1, *wr2, *br2, *wq1, *bq1, *wq2, *bq2;
 
-void displayLEDstartUpSequence()
+void displayLEDshutdownSequence()
 {
   for(int i=0; i<64; i++)
   {
@@ -155,7 +170,11 @@ void assembleIncomingChesslinkMessage(char readChar)
 
 void displayAboutBox()
 {
-  object = lv_msgbox_create(screenMain, VERSION, ABOUT_TEXT, NULL, true);
+  object = lv_msgbox_create(screenMain);
+
+  lv_msgbox_add_title(object, VERSION);
+  lv_msgbox_add_text(object, ABOUT_TEXT);
+  lv_msgbox_add_close_button(object);
 
   lv_obj_add_style(object, &fLargeStyle, 0);
   lv_obj_set_size(object, 368, 186);
@@ -165,12 +184,16 @@ void displayAboutBox()
 
 byte debugPrint(const char *message)
 {
-  if(connection == USB)
+  if(connection != USB) 
   {
     Serial.print(message);
     return 1;
   }
-  // BLE doesn't use debug prints (uses characteristics)
+  if(connection != BT) 
+  {
+    SerialBT.print(message);
+    return 1;
+  }
   return 0;
 }
 
@@ -193,9 +216,14 @@ void startTouchCalibration()
 
 byte debugPrintln(const char *message)
 {
-  if(connection == USB)
+  if(connection != USB) 
   {
     Serial.println(message);
+    return 1;
+  }
+  if(connection != BT) 
+  {
+    SerialBT.println(message);
     return 1;
   }
   return 0;
@@ -215,7 +243,10 @@ void saveBoardSettings(void)
   {
     saveConnection = BLE;
   }
-  // BT removed - only USB and BLE supported now
+  if (connection == BT)
+  {
+    saveConnection = BT;
+  }
 
   // store data
   File f = SPIFFS.open(BOARD_SETUP_FILE, "w");
@@ -273,12 +304,7 @@ void loadBoardSettings(void)
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
-        // Validate emulation value to prevent invalid modes
-        if (tempInt8[0] <= 1) {
-          chessBoard.emulation = tempInt8[0];
-        } else {
-          chessBoard.emulation = 1; // Default to Chesslink if invalid
-        }
+        chessBoard.emulation = tempInt8[0];
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
@@ -286,11 +312,7 @@ void loadBoardSettings(void)
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
-        // Map old BT (value 1) to USB for backward compatibility
-        if (tempInt8[0] == 0) connection = USB;      // 0 = USB
-        else if (tempInt8[0] == 1) connection = USB; // 1 = old BT, map to USB
-        else if (tempInt8[0] >= 2) connection = BLE; // 2+ = BLE
-        else connection = USB; // Default to USB
+        connection = (connectionType)tempInt8[0];
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
@@ -369,25 +391,44 @@ void sendMessageToChessBoard(const char *message)
     {
       debugPrintln("*** Semaphore could not be taken - ERROR sending message ***");
     }
-    return; // Exit after BLE send
   }
-
-  // USB communication
-  Serial.print(codedMessage.c_str());
-  Serial.flush();
+  if (connection == BT)
+  {
+    SerialBT.print(codedMessage.c_str());
+    SerialBT.flush();
+  }
+  if (connection == USB)
+  {
+    Serial.print(codedMessage.c_str());
+    Serial.flush();
+  }
 }
 
 void updateSettingsScreen()
 {
   if(chessBoard.emulation==0) 
   {
+#ifdef PEGASUS
+    lv_obj_clear_state(pegasusCB, LV_STATE_CHECKED);  
+#endif
     lv_obj_add_state(certaboCB, LV_STATE_CHECKED);
     lv_obj_clear_state(chesslinkCB, LV_STATE_CHECKED);  
   }
   if(chessBoard.emulation==1) 
   {
+#ifdef PEGASUS
+    lv_obj_clear_state(pegasusCB, LV_STATE_CHECKED);  
+#endif
     lv_obj_clear_state(certaboCB, LV_STATE_CHECKED);
     lv_obj_add_state(chesslinkCB, LV_STATE_CHECKED);  
+  }
+  if(chessBoard.emulation==2) 
+  {
+    lv_obj_clear_state(certaboCB, LV_STATE_CHECKED);
+    lv_obj_clear_state(chesslinkCB, LV_STATE_CHECKED);
+#ifdef PEGASUS
+    lv_obj_add_state(pegasusCB, LV_STATE_CHECKED);  
+#endif
   }
   if(chessBoard.flipped) 
   {
@@ -399,6 +440,23 @@ void updateSettingsScreen()
   }
 }
 
+class MyServerCallbacksPegasus : public BLEServerCallbacks
+{
+  void onConnect(BLEServer *pServer)
+  {
+    connection = BLE;
+    updateSettingsScreen();
+    debugPrintln("Pegasus Emulation: BLE DEVICE CONNECTED");
+  };
+
+  void onDisconnect(BLEServer *pServer)
+  {
+    debugPrintln("Pegasus Emulation: BLE DEVICE DISCONNECTED");
+    updateSettingsScreen();
+    delay(500);                  // give the bluetooth stack the chance to get things ready
+    pServer->startAdvertising(); // restart advertising
+  }
+};
 
 class MyServerCallbacks : public BLEServerCallbacks
 {
@@ -425,7 +483,7 @@ void sendChesslinkAnswer(char *incomingMessage)
   {
     debugPrint("Detected valid incoming Version Request Message V: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("v0244");  // identify as Millennium Exclusive board
+    sendMessageToChessBoard("v0017");  // identify as Millennium Exclusive board: v0.23 in WhitePawn (00.00 - 00.FF)
     return;
   }
   if (strlen(incomingMessage) == 5 && incomingMessage[0] == 'R')
@@ -507,7 +565,7 @@ void sendChesslinkAnswer(char *incomingMessage)
   {
     debugPrint("Detected incoming Message I: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("i00e-one\n");  // Tournament 55 board
+    sendMessageToChessBoard("iFF\n");  // Don't understand I-Message!
     return;
   }
   if (strlen(incomingMessage) == 3 && (strcmp(incomingMessage, "X58") == 0))
@@ -546,7 +604,62 @@ class MyCallbacksChesslink : public BLECharacteristicCallbacks
   }
 };
 
+class MyCallbacksPegasus : public BLECharacteristicCallbacks
+{
+  void onWrite(BLECharacteristic *pCharacteristic)
+  {
+    std::string rxValue = pCharacteristic->getValue();
+    // your stuff to process incoming data
+    char readChar;
 
+    if (rxValue.length() > 0)
+    {
+      for (int i = 0; i < rxValue.length(); i++)
+      {
+        readChar = rxValue[i];
+
+        debugPrintln(""+readChar);
+      }
+      // sendChesslinkAnswer(incomingMessage);
+    }
+  }
+};
+
+void initBleServicePegasus()
+{
+  //Bluetooth BLE initialization for mode B boards
+  //esp_log_level_set("*", ESP_LOG_VERBOSE);
+
+  //Register and initialize BLE Transparent UART Mode.
+  BLEDevice::deinit(true);
+  BLEDevice::init("DGT Pegasus");
+  BLEDevice::setMTU(517);
+  // BLEDevice::setMTU(192);
+
+  // Create the BLE Server
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacksPegasus());
+
+  // Create the BLE Service for Transparent UART Mode.
+  pService = pServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E"); // Nordic BLE Service
+  // pService = pServer->createService("49535343-fe7d-4ae5-8fa9-9fafd205e455");
+
+  // Create a BLE Characteristic for TX data
+  pTxCharacteristic = pService->createCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E", BLECharacteristic::PROPERTY_NOTIFY); // Nordic TX Characteristic
+  // pTxCharacteristic = pService->createCharacteristic("49535343-1e4d-4bd9-ba61-23c647249616", BLECharacteristic::PROPERTY_NOTIFY);
+  pTxCharacteristic->addDescriptor(new BLE2902());
+
+  // Create a BLE Characteristic for RX data
+  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E", BLECharacteristic::PROPERTY_WRITE); // Nordic RX Characteristic
+  // BLECharacteristic *pRxCharacteristic = pService->createCharacteristic("49535343-8841-43f4-a8d4-ecbe34729bb3", BLECharacteristic::PROPERTY_WRITE);
+  pRxCharacteristic->setCallbacks(new MyCallbacksPegasus());
+
+  // Start the service
+  pService->start();
+  // Advertise the service
+  pServer->getAdvertising()->start();
+
+}
 
 void initBleServiceChesslink()
 {
@@ -555,8 +668,9 @@ void initBleServiceChesslink()
 
   //Register and initialize BLE Transparent UART Mode.
   BLEDevice::deinit(true);
-  BLEDevice::init("MILLENNIUM CHESS");
-  BLEDevice::setMTU(517);
+  BLEDevice::init(modeBleAdvertisedName);
+  BLEDevice::setMTU(185);
+  // BLEDevice::setMTU(517);
 
   // Create the BLE Server
   pServer = BLEDevice::createServer();
@@ -579,46 +693,74 @@ void initBleServiceChesslink()
   // Advertise the service
   pServer->getAdvertising()->start();
 
-  //semaphore to handle data over BLE
+   pServer->getAdvertising()->setAppearance(GENERIC_HID);
+
+  pServer->getAdvertising()->addServiceUUID("49535343-fe7d-4ae5-8fa9-9fafd205e455");
+
+  pServer->getAdvertising()->setScanResponse(true);
+
+  BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+
+  oAdvertisementData.setShortName(modeBleAdvertisedName);
+  oAdvertisementData.setName(modeBleAdvertisedName);
+  oAdvertisementData.setAppearance(GENERIC_HID);
+
+  pServer->getAdvertising()->setAdvertisementData(oAdvertisementData);
+
+  pServer->getAdvertising()->start();
+  
+   //semaphore to handle data over BLE
   sendBLEsemaphore = xSemaphoreCreateMutex();
   xSemaphoreGive(sendBLEsemaphore);
 }
 
 void initSerialPortCommunication(void)
 {
-  if (connection == USB)
+  if (connection != USB)
   {
-    if (chessBoard.emulation == 0)
+    // Serial Port is used for debugging!
+    // Serial.end();
+    Serial.begin(115200);
+  }
+  else if (connection != BT)
+  {
+    // SerialBT.end();
+    SerialBT.begin("Chesstimation DEBUG");
+  }
+  if (chessBoard.emulation == 0)
+  {
+    if (connection == USB)
     {
-      // Certabo emulation
+      // Serial.end();
       Serial.begin(38400);
     }
-    else
+    if(connection == BT)
     {
-      // Chesslink emulation
-      Serial.begin(38400, SERIAL_7O1);
+      // SerialBT.end();
+      SerialBT.begin("Certabo");
     }
-    debugPrintln("Switching connection to USB!");
   }
-
-  if(connection == BLE)
+  if (chessBoard.emulation == 1)
   {
-    if (chessBoard.emulation == 0)
+    if (connection == USB)
     {
-      debugPrintln("BLE only supports Chesslink emulation!");
-      chessBoard.emulation = 1; // Force Chesslink for BLE
+      // Serial.end();
+      Serial.begin(38400, SERIAL_7O1);
+      // Serial.begin(38400); // ESP32 S3, SERIAL_7O1);
     }
-
-    if(millBLEinitialized == 0)
+    if(connection == BT)
+    {
+      // SerialBT.end();
+      SerialBT.begin("MILLENNIUM CHESS BT");
+    }
+    if(connection == BLE)
     {
       initBleServiceChesslink();
-      millBLEinitialized = 1;
     }
-    debugPrintln("Switching to Chesslink BLE!");
   }
 
   // Update UI:
-  if(connection == USB)
+  if(connection == USB) 
   {
     lv_label_set_text(connectionLbl, LV_SYMBOL_USB);
   }
@@ -650,23 +792,29 @@ void updatePiecesOnBoard()
 
   for (int i = 0; i < 64; i++)
   {
+    
     certPiece = chessBoard.piece[i];
+    
     if (oldBoard[i] != certPiece)
     {
+      // Check for Black Pawns (these have binary pattern 11 at the end (see board.h))
       if ((certPiece & 0b00001111) == 0b00000011)
       {
         int pawnIndex = (certPiece >> 4) & 0x0f;
+        // Security check to ensure that array is addressed correctly:
         if (pawnIndex < 8) {
-            lv_obj_set_pos(bp[pawnIndex], getColFromBoardIndex(i) * SQUARE_SIZE, getRowFromBoardIndex(i) * SQUARE_SIZE);
-            lv_obj_clear_flag(bp[pawnIndex], LV_OBJ_FLAG_HIDDEN);
+          lv_obj_set_pos(bp[pawnIndex], getColFromBoardIndex(i) * SQUARE_SIZE, getRowFromBoardIndex(i) * SQUARE_SIZE);
+          lv_obj_clear_flag(bp[pawnIndex], LV_OBJ_FLAG_HIDDEN);
         }
       }
+      // Check for White Pawns (these have binary pattern 10 at the end (see board.h))
       if ((certPiece & 0b00001111) == 0b00000010)
       {
         int pawnIndex = (certPiece >> 4) & 0x0f;
+        // Security check to ensure that array is addressed correctly:
         if (pawnIndex < 8) {
-            lv_obj_set_pos(wp[pawnIndex], getColFromBoardIndex(i) * SQUARE_SIZE, getRowFromBoardIndex(i) * SQUARE_SIZE);
-            lv_obj_clear_flag(wp[pawnIndex], LV_OBJ_FLAG_HIDDEN);
+          lv_obj_set_pos(wp[pawnIndex], getColFromBoardIndex(i) * SQUARE_SIZE, getRowFromBoardIndex(i) * SQUARE_SIZE);
+          lv_obj_clear_flag(wp[pawnIndex], LV_OBJ_FLAG_HIDDEN);
         }
       }
       if (certPiece == WK1)
@@ -761,16 +909,15 @@ void updatePiecesOnBoard()
       }
 
       // Piece was lifted:
-      // if (certPiece == EMP)
-      // {
-        if ((oldBoard[i] & 0b00001111) == 0b00000011) // Black Pawn
+
+        if ((oldBoard[i] & 0b00001111) == 0b00000011) // Black Pawn 
         {
             int pawnIndex = (oldBoard[i] >> 4) & 0x0f;
             if (pawnIndex < 8) {
                 lv_obj_add_flag(bp[pawnIndex], LV_OBJ_FLAG_HIDDEN);
             }
         }
-        if ((oldBoard[i] & 0b00001111) == 0b00000010) // White Pawn
+        if ((oldBoard[i] & 0b00001111) == 0b00000010) // White Pawn 
         {
             int pawnIndex = (oldBoard[i] >> 4) & 0x0f;
             if (pawnIndex < 8) {
@@ -849,7 +996,7 @@ void updatePiecesOnBoard()
         {
           lv_obj_add_flag(bq2, LV_OBJ_FLAG_HIDDEN);
         }
-      // }
+      
       oldBoard[i] = certPiece;
       updated++;
     }
@@ -867,7 +1014,7 @@ void updatePiecesOnBoard()
 
 static void slider_event_cb(lv_event_t *e)
 {
-  lv_obj_t *slider = lv_event_get_target(e);
+  lv_obj_t *slider = (lv_obj_t*)lv_event_get_target(e);
   brightness = lv_slider_get_value(slider);
   ledcWrite(0, (uint8_t)brightness);
   // lv_label_set_text_fmt(debugLbl, "Brightness: %i", brightness);
@@ -875,6 +1022,7 @@ static void slider_event_cb(lv_event_t *e)
 
 void switchOff(void)
 {
+  // TODO: Disconnect from Serial / Bluetooth and BLE?
   saveBoardSettings();
 
   tft.writecommand(0x10); // TFT Display Sleep mode on
@@ -898,7 +1046,7 @@ void switchOff(void)
 
   esp_sleep_enable_ext0_wakeup(TOUCH_PANEL_IRQ_PIN, LOW);
 
-  displayLEDstartUpSequence();
+  displayLEDshutdownSequence();
   // Switch all LEDs off before going into sleep mode:
   for(int i = 0; i<8; i++)
   {
@@ -912,7 +1060,7 @@ void switchOff(void)
 
 // After Wakeup:
 
-  lv_scr_load(screenMain);
+  lv_screen_load(screenMain);
   loadBoardSettings();
   initSerialPortCommunication();
   ledcAttachPin(TFT_BL, 0);
@@ -921,6 +1069,40 @@ void switchOff(void)
 
   // ESP.restart();
 
+}
+
+void updatePromotionButtons()
+{
+  switch (chessBoard.promotionPieceW)
+  {
+  case 'Q':
+    lv_image_set_src(promotionBtnImageW, &WQ40);
+    break;
+  case 'N':
+    lv_image_set_src(promotionBtnImageW, &WN40);
+    break;
+  case 'R':
+    lv_image_set_src(promotionBtnImageW, &WR40);
+    break;
+  case 'B':
+    lv_image_set_src(promotionBtnImageW, &WB40);
+    break;
+  }
+  switch (chessBoard.promotionPieceB)
+  {
+  case 'Q':
+    lv_image_set_src(promotionBtnImageB, &BQ40);
+    break;
+  case 'N':
+    lv_image_set_src(promotionBtnImageB, &BN40);
+    break;
+  case 'R':
+    lv_image_set_src(promotionBtnImageB, &BR40);
+    break;
+  case 'B':
+    lv_image_set_src(promotionBtnImageB, &BB40);
+    break;
+  }
 }
 
 void updateUI_language()
@@ -956,7 +1138,7 @@ void updateUI_language()
 static void event_handler(lv_event_t *e)
 {
   lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t *obj = lv_event_get_target(e);
+  lv_obj_t *obj = (lv_obj_t*)lv_event_get_target(e);
 
   if (code == LV_EVENT_CLICKED)
   {
@@ -985,7 +1167,7 @@ static void event_handler(lv_event_t *e)
     }
     if (obj == settingsBtn)
     {
-      lv_scr_load(settingsScreen);
+      lv_screen_load(settingsScreen);
     }
     /*
     if (obj == emulatorsBtn)
@@ -1000,34 +1182,58 @@ static void event_handler(lv_event_t *e)
       chessBoard.startPosition(lv_obj_get_state(certaboCalibCB) & LV_STATE_CHECKED);
       resetOldBoard();
       updatePiecesOnBoard();
+      chessBoard.promotionPieceW = chessBoard.promotionPieceB = 'Q';
+      // updatePromotionButtons();
 
+      extinguishBoardLEDs();
       physicalConformity = (lv_obj_get_state(certaboCalibCB) & LV_STATE_CHECKED); // Physical conformity not checked when using calibration Queens in Certabo Emulation!
 
-      lv_scr_load(screenMain);
+      lv_screen_load(screenMain);
     }
     else if (obj == exitSettingsBtn)
     {
       lv_scr_load(screenMain);
     }
-    if (obj == promotionQueenBtn)
+    // Promotion Button Event:
+    if (obj == promotionBtnW)
     {
-      chessBoard.promotionPiece = promotingWhitePawn ? WQ1 : BQ1;
-      lv_scr_load(screenMain);
+      if(chessBoard.promotionPieceW == 'Q')
+      {
+        chessBoard.promotionPieceW = 'N';
+      }
+      else if(chessBoard.promotionPieceW == 'N')
+      {
+        chessBoard.promotionPieceW = 'R';
+      }
+      else if(chessBoard.promotionPieceW == 'R')
+      {
+        chessBoard.promotionPieceW = 'B';
+      }
+      else if(chessBoard.promotionPieceW == 'B')
+      {
+        chessBoard.promotionPieceW = 'Q';
+      }
+      updatePromotionButtons();
     }
-    if (obj == promotionRookBtn)
+    if (obj == promotionBtnB)
     {
-      chessBoard.promotionPiece = promotingWhitePawn ? WR1 : BR1;
-      lv_scr_load(screenMain);
-    }
-    if (obj == promotionBishopBtn)
-    {
-      chessBoard.promotionPiece = promotingWhitePawn ? WB1 : BB1;
-      lv_scr_load(screenMain);
-    }
-    if (obj == promotionKnightBtn)
-    {
-      chessBoard.promotionPiece = promotingWhitePawn ? WN1 : BN1;
-      lv_scr_load(screenMain);
+      if (chessBoard.promotionPieceB == 'Q')
+      {
+        chessBoard.promotionPieceB = 'N';
+      }
+      else if (chessBoard.promotionPieceB == 'N')
+      {
+        chessBoard.promotionPieceB = 'R';
+      }
+      else if (chessBoard.promotionPieceB == 'R')
+      {
+        chessBoard.promotionPieceB = 'B';
+      }
+      else if (chessBoard.promotionPieceB == 'B')
+      {
+        chessBoard.promotionPieceB = 'Q';
+      }
+      updatePromotionButtons();
     }
   }
   else if (code == LV_EVENT_VALUE_CHANGED)
@@ -1084,6 +1290,15 @@ static void event_handler(lv_event_t *e)
         chessBoard.emulation = 0;
       }
     }
+#ifdef PEGASUS
+    if (obj == pegasusCB)
+    {
+      if ((lv_obj_get_state(pegasusCB) & LV_STATE_CHECKED) == 1)
+      {
+        chessBoard.emulation = 2;
+      }
+    }
+#endif
     if (obj == chesslinkCB)
     {
       if ((lv_obj_get_state(chesslinkCB) & LV_STATE_CHECKED) == 1)
@@ -1099,20 +1314,28 @@ static void event_handler(lv_event_t *e)
   }
 }
 
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
+// Empty all LED info to switch off LEDs, e.g. after game restart:
+void extinguishBoardLEDs()
+{
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      mephistoLED[i][j] = 0;
+}
+
+void my_disp_flush(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
-    tft.pushColors(&color_p->full, w * h, true);
+    tft.pushColors((uint16_t *)px_map, w * h, true);
     tft.endWrite();
 
-    lv_disp_flush_ready(disp);
+    lv_disp_flush_ready(display);
 }
 
-void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data)
+void my_input_read(lv_indev_t* drv, lv_indev_data_t* data)
 {
    uint16_t touchX, touchY;
 
@@ -1150,25 +1373,22 @@ void initLVGL()
   // tft.writecommand(0x51);
   // tft.writedata(20);
 
+
   lv_init();
 
-  lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
-
   /*Initialize the display*/
-
-  lv_disp_drv_init(&disp_drv);
-  disp_drv.hor_res = 480;
-  disp_drv.ver_res = 320;
-  disp_drv.flush_cb = my_disp_flush;
-  disp_drv.draw_buf = &disp_buf;
-  lv_disp_drv_register(&disp_drv);
+  
+  disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
+  dispBuf = heap_caps_malloc(DISP_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  
+  lv_display_set_flush_cb(disp, my_disp_flush);
+  lv_display_set_buffers(disp, dispBuf, NULL, DISP_BUF_SIZE, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
   /*Initialize the input device driver*/
 
-  lv_indev_drv_init(&indev_drv);          /*Descriptor of a input device driver*/
-  indev_drv.type = LV_INDEV_TYPE_POINTER; /*Touch pad is a pointer-like device*/
-  indev_drv.read_cb = my_input_read;      /*Set your driver function*/
-  lv_indev_drv_register(&indev_drv);      /*Finally register the driver*/
+  indev = lv_indev_create();
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(indev, my_input_read);
 }
 
 void createSettingsScreen()
@@ -1211,6 +1431,12 @@ void createSettingsScreen()
   lv_obj_add_event_cb(chesslinkCB, event_handler, LV_EVENT_ALL, NULL);
   lv_obj_add_style(chesslinkCB, &fMediumStyle, 0);
 
+#ifdef PEGASUS
+  pegasusCB = lv_checkbox_create(content);
+  lv_checkbox_set_text(pegasusCB, "DGT Pegasus");
+  lv_obj_add_event_cb(pegasusCB, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_add_style(pegasusCB, &fMediumStyle, 0);
+#endif
 
   /*Create a container for Certabo Settings */
   object = lv_obj_create(content);
@@ -1237,8 +1463,10 @@ void createSettingsScreen()
   lv_obj_set_grid_cell(flippedCB, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
   lv_obj_set_align(flippedCB, LV_ALIGN_LEFT_MID );
 
+#ifndef PEGASUS
   // lv_obj_set_style_pad_top(flippedCB, 16, 0);
   lv_obj_set_style_pad_top(flippedCB, 1, 0);
+#endif
   lv_obj_add_style(flippedCB, &fMediumStyle, 0);
 
   object = lv_obj_create(content);  // Panel for Communication Label and Dropdown
@@ -1258,7 +1486,7 @@ void createSettingsScreen()
   lv_obj_set_align(commLbl, LV_ALIGN_LEFT_MID );
 
   connectionDd = lv_dropdown_create(object);
-  lv_dropdown_set_options_static(connectionDd, "USB\nBLE");
+  lv_dropdown_set_options_static(connectionDd, "USB\nBT\nBLE");
   lv_obj_set_align(connectionDd, LV_ALIGN_RIGHT_MID );
   lv_obj_set_style_pad_all(connectionDd, 4, 0);
   lv_obj_set_size(connectionDd, 80, LV_SIZE_CONTENT);  
@@ -1361,56 +1589,20 @@ void createSettingsScreen()
 
 }
 
-
-void createPromotionScreen()
-{
-  promotionScreen = lv_obj_create(NULL);
-  lv_obj_set_size(promotionScreen, 480, 320);
-  lv_obj_set_style_bg_color(promotionScreen, lv_color_hex(0x000000), 0);
-  lv_obj_set_style_bg_opa(promotionScreen, LV_OPA_50, 0);
-
-  lv_obj_t * cont = lv_obj_create(promotionScreen);
-  lv_obj_set_size(cont, 320, 80);
-  lv_obj_align(cont, LV_ALIGN_CENTER, 0, 0);
-  lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-  promotionQueenBtn = lv_imgbtn_create(cont);
-  lv_imgbtn_set_src(promotionQueenBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WQ40, NULL);
-  lv_obj_add_event_cb(promotionQueenBtn, event_handler, LV_EVENT_ALL, NULL);
-
-  promotionRookBtn = lv_imgbtn_create(cont);
-  lv_imgbtn_set_src(promotionRookBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WR40, NULL);
-  lv_obj_add_event_cb(promotionRookBtn, event_handler, LV_EVENT_ALL, NULL);
-
-  promotionBishopBtn = lv_imgbtn_create(cont);
-  lv_imgbtn_set_src(promotionBishopBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WB40, NULL);
-  lv_obj_add_event_cb(promotionBishopBtn, event_handler, LV_EVENT_ALL, NULL);
-
-  promotionKnightBtn = lv_imgbtn_create(cont);
-  lv_imgbtn_set_src(promotionKnightBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WN40, NULL);
-  lv_obj_add_event_cb(promotionKnightBtn, event_handler, LV_EVENT_ALL, NULL);
-}
-
 void createUI()
 {
   screenMain = lv_obj_create(NULL);
 
-  // lv_style_init(&fSmallStyle);
-  // lv_style_set_text_font(&fSmallStyle, &lv_font_montserrat_10);
-    
-  lv_style_init(&fMediumStyle);
-  // lv_font_t mediumStyleFont = lv_font_montserrat_20;
-  // mediumStyleFont.fallback = &umlaute20;
-  // lv_style_set_text_font(&fMediumStyle, &mediumStyleFont);
+  lv_style_init(&fMediumStyle); // Font Size 20
+  // lv_style_set_text_font(&fMediumStyle, &lv_font_montserrat_20);
   lv_style_set_text_font(&fMediumStyle, &montserrat_umlaute20);
     
-  lv_style_init(&fLargeStyle);
-  // lv_style_set_text_font(&fLargeStyle, &lv_font_montserrat_22);  // was 22
-  lv_style_set_text_font(&fLargeStyle, &montserrat_umlaute22);  // was 22
+  lv_style_init(&fLargeStyle); // Font Size 22
+  // lv_style_set_text_font(&fLargeStyle, &lv_font_montserrat_22); 
+  lv_style_set_text_font(&fLargeStyle, &montserrat_umlaute22);  
     
-  lv_style_init(&fExtraLargeStyle);
-  lv_style_set_text_font(&fExtraLargeStyle, &lv_font_montserrat_28); // was 28
+  lv_style_init(&fExtraLargeStyle); // Font Size 28
+  lv_style_set_text_font(&fExtraLargeStyle, &lv_font_montserrat_28);
     
   object = lv_label_create(screenMain);
   lv_label_set_text(object, "Chesstimation");
@@ -1423,7 +1615,7 @@ void createUI()
   #ifdef LOLIN_D32
   batteryLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(batteryLbl, LV_TEXT_ALIGN_LEFT, 0);
-  lv_obj_set_size(batteryLbl, 33, 15);
+  lv_obj_set_size(batteryLbl, 33, 20);
   lv_obj_set_pos(batteryLbl, 446, 0);
   lv_obj_add_style(batteryLbl, &fLargeStyle, 0);  
   #endif
@@ -1440,7 +1632,7 @@ void createUI()
   lv_obj_set_style_text_align(debugLbl, LV_TEXT_ALIGN_RIGHT, 0);
   lv_label_set_long_mode(debugLbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_obj_set_size(debugLbl, 146, 25);
-  lv_obj_set_pos(debugLbl, 327, 225);
+  lv_obj_set_pos(debugLbl, 327, 236);
   lv_obj_add_style(debugLbl, &fMediumStyle, 0);  
 
 #ifdef LEGACY_EMULATION  
@@ -1455,10 +1647,28 @@ void createUI()
   lv_obj_add_style(emulatorsBtn, &fMediumStyle, 0);
 #endif
 
+  promotionBtnW = lv_btn_create(screenMain);
+  // lv_obj_add_flag(promotionBtnW, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_event_cb(promotionBtnW, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_set_size(promotionBtnW, 56, 56);
+  promotionBtnImageW = lv_image_create(promotionBtnW);
+  lv_image_set_src(promotionBtnImageW, &WQ40);   
+  lv_obj_center(promotionBtnImageW); 
+  lv_obj_set_pos(promotionBtnW, 338, 174);
+
+  promotionBtnB = lv_btn_create(screenMain);
+  // lv_obj_add_flag(promotionBtnB, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_event_cb(promotionBtnB, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_set_size(promotionBtnB, 56, 56);
+  promotionBtnImageB = lv_image_create(promotionBtnB);
+  lv_image_set_src(promotionBtnImageB, &BQ40);   
+  lv_obj_center(promotionBtnImageB); 
+  lv_obj_set_pos(promotionBtnB, 406, 174);
+
   settingsBtn = lv_btn_create(screenMain);
   lv_obj_add_event_cb(settingsBtn, event_handler, LV_EVENT_ALL, NULL);
   lv_obj_set_size(settingsBtn, 150, 40);
-  lv_obj_set_pos(settingsBtn, 325, 260);
+  lv_obj_set_pos(settingsBtn, 325, 264);
 
   settingsLbl = lv_label_create(settingsBtn);
   lv_obj_set_align(settingsLbl, LV_ALIGN_CENTER);
@@ -1483,8 +1693,8 @@ void createUI()
 
   connectionLbl = lv_label_create(screenMain);
   lv_obj_set_style_text_align(connectionLbl, LV_TEXT_ALIGN_RIGHT, 0);
-  lv_obj_set_size(connectionLbl, 29, 20);
-  lv_obj_set_pos(connectionLbl, 442, 75);
+  lv_obj_set_size(connectionLbl, 29, 25);
+  lv_obj_set_pos(connectionLbl, 442, 68);
   lv_obj_add_style(connectionLbl, &fLargeStyle, 0);  
 
   // Create Chessboard
@@ -1508,7 +1718,9 @@ void createUI()
         lv_obj_add_style(square[i], &dark_square, 0);
     }
   }
-  
+
+
+ 
   for (int i = 0; i < 8; i++)
   {
     wp[i] = lv_img_create(screenMain);
@@ -1593,8 +1805,9 @@ void createUI()
   
   resetOldBoard();
   updatePiecesOnBoard();
-  createPromotionScreen();
+
 }
+
 void setup()
 {
 /*
@@ -1642,8 +1855,6 @@ void setup()
   chessBoard.generateSerialBoardMessage();
   // chessBoard.copyPieceSetupToRaw(chessBoard.lastRawRow);
 
-  // buf = (lv_color_t*) malloc(DISP_BUF_SIZE);
-
   initLVGL();
 
   lv_i18n_init(lv_i18n_language_pack);
@@ -1653,13 +1864,12 @@ void setup()
   createSettingsScreen();
 
   updateUI_language();
-
+  
   initSerialPortCommunication();
-
-  lv_scr_load(screenMain);
-
+  lv_screen_load(screenMain);
+ 
   chessBoard.updateLiftedPiecesString();
-
+ 
   // chessBoard.printDebugMessage();
 }
 
@@ -1675,6 +1885,13 @@ void loop()
   static long long oldMessageMillis=-10000;
   unsigned long actMillis;
   actMillis = millis();
+  static unsigned long lastTickMillis = 0;
+  
+    // LVGL Tick Interface, this is required since LVGL 9.x
+  unsigned int tickPeriod = actMillis - lastTickMillis;
+  lv_tick_inc(tickPeriod);
+  lastTickMillis = actMillis;
+
   if(actMillis-oldMillis>10000) {
     float voltage = analogRead(35)/587.5;
     // char batMessage[80]="";
@@ -1750,7 +1967,21 @@ void loop()
         }
       };
     }
-    // BLE uses characteristic-based communication, not serial
+    if (connection == BT)
+    {
+      while (SerialBT.available())
+      {
+        led_buffer[writeToIndex] = SerialBT.read();
+
+        writeToIndex++;
+        if (writeToIndex > 7)
+        {
+          writeToIndex = 0;
+          SerialBT.println("L");
+          SerialBT.flush();
+        }
+      };
+    }
   }
 
   if ((chessBoard.emulation == 1) && connection != BLE) // Millennium Chesslink
@@ -1769,7 +2000,19 @@ void loop()
         sendChesslinkAnswer(incomingMessage);
       }
     }
-    // BLE message handling done via MyCallbacksChesslink::onWrite()
+    if (connection == BT)
+    {
+      if (SerialBT.available() > 0)
+      {
+        for (int i = 0; i < SerialBT.available(); i++)
+        {
+          SerialBT.readBytes(&readChar, 1);
+
+          assembleIncomingChesslinkMessage(readChar);
+        }
+        sendChesslinkAnswer(incomingMessage);
+      }
+    }
   }
 
   if(chessBoard.emulation==1) // Millennium Chesslink
@@ -1842,8 +2085,10 @@ void loop()
     for (int i = 0; i < 8; i++)
     {
       mephisto.writeRow(7 - i, led_buffer[i]);
-      if (rows > 0) {
+      if (led_buffer[i] != 0 && rows != 0)
+      {
         delay(LED_TIME / rows);
+        lv_task_handler();
       }
     }
     return;
@@ -1883,30 +2128,19 @@ void loop()
   }
 
   // Check every single field for set back piece:
-  for(int i=0; i<8; i++) { // for each row
-    for(int col = 0; col<8; col++) { // for each column
-    int diff = (bitRead(chessBoard.lastRawRow[i], col) - bitRead(readRawRow[i], col));
-      if(diff<0) {
-        if (chessBoard.isWhitePawn(0x00ff & chessBoard.piecesLifted[chessBoard.liftedIdx - 1]) && (getRowFromBoardIndex(toBoardIndex(i, col)) == 0)) {
-          promotingWhitePawn = true;
-          // Update promotion screen to show white pieces
-          lv_imgbtn_set_src(promotionQueenBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WQ40, NULL);
-          lv_imgbtn_set_src(promotionRookBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WR40, NULL);
-          lv_imgbtn_set_src(promotionBishopBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WB40, NULL);
-          lv_imgbtn_set_src(promotionKnightBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WN40, NULL);
-          lv_scr_load(promotionScreen);
-        } else if (chessBoard.isBlackPawn(0x00ff & chessBoard.piecesLifted[chessBoard.liftedIdx - 1]) && (getRowFromBoardIndex(toBoardIndex(i, col)) == 7)) {
-          promotingWhitePawn = false;
-          // Update promotion screen to show black pieces
-          lv_imgbtn_set_src(promotionQueenBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BQ40, NULL);
-          lv_imgbtn_set_src(promotionRookBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BR40, NULL);
-          lv_imgbtn_set_src(promotionBishopBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BB40, NULL);
-          lv_imgbtn_set_src(promotionKnightBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BN40, NULL);
-          lv_scr_load(promotionScreen);
-        }
+  // for each row
+  for (int i = 0; i < 8; i++)
+  { 
+    // for each column
+    for (int col = 0; col < 8; col++)
+    { 
+      int diff = (bitRead(chessBoard.lastRawRow[i], col) - bitRead(readRawRow[i], col));
+      if (diff < 0)
+      {
         chessBoard.setPieceBackTo(toBoardIndex(i, col));
         setBack++;
-      }    }
+      }
+    }
   }
 
   // A figure was lifted or set back:
@@ -1924,10 +2158,53 @@ void loop()
       lv_label_set_text(liftedPiecesStringLbl, chessBoard.liftedPiecesDisplayString);
     }
     updatePiecesOnBoard();
+    updatePromotionButtons();
   }
 
-  for (int row=0; row<8; row++) {
-      chessBoard.lastRawRow[row]=readRawRow[row];
+  for (int row = 0; row < 8; row++)
+  {
+    chessBoard.lastRawRow[row] = readRawRow[row];
+  }
+
+  // Check if promotion button neeed to be enabled:
+  int pawnsW = 0;
+  int pawnsB = 0;
+  for (int col = 0; col < 8; col++)
+  {
+    if (chessBoard.flipped)
+    {
+      if (chessBoard.isBlackPawn(chessBoard.piece[toBoardIndex(6, col)]))
+        pawnsB++;
+      if (chessBoard.isWhitePawn(chessBoard.piece[toBoardIndex(1, col)]))
+        pawnsW++;
+    }
+    else
+    {
+      if (chessBoard.isWhitePawn(chessBoard.piece[toBoardIndex(6, col)]))
+        pawnsW++;
+      if (chessBoard.isBlackPawn(chessBoard.piece[toBoardIndex(1, col)]))
+        pawnsB++;
+    }
+  }
+  // TODO: Remove debugging:
+  // if(pawnsW!=0 || pawnsB!=0)
+  //   lv_label_set_text_fmt(debugLbl, "W: %i, B: %i", pawnsW, pawnsB);
+  
+  if (pawnsW && lv_obj_has_flag(promotionBtnW, LV_OBJ_FLAG_HIDDEN))
+  {
+    lv_obj_remove_flag(promotionBtnW, LV_OBJ_FLAG_HIDDEN);
+  }
+  else if (!pawnsW && !lv_obj_has_flag(promotionBtnW, LV_OBJ_FLAG_HIDDEN))
+  {
+    lv_obj_add_flag(promotionBtnW, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (pawnsB && lv_obj_has_flag(promotionBtnB, LV_OBJ_FLAG_HIDDEN))
+  {
+    lv_obj_remove_flag(promotionBtnB, LV_OBJ_FLAG_HIDDEN);
+  }
+  else if (!pawnsB && !lv_obj_has_flag(promotionBtnB, LV_OBJ_FLAG_HIDDEN))
+  {
+    lv_obj_add_flag(promotionBtnB, LV_OBJ_FLAG_HIDDEN);
   }
 
   // After the whole board is read and any change is regarded, the Serial Board message is re-generated:
@@ -1937,14 +2214,25 @@ void loop()
   //   chessBoard.boardMessage[65]=0;
   // }
 
-  if (lifted > 0 || setBack > 0 || chessBoard.emulation == 0 || ((actMillis-oldMessageMillis>eeprom[3]*4) && eeprom[2]==2)) // Certabo boards sends position even when no change happend
-  { 
+  // Idea: Set Chessboard message at least once after start of the game:
+  // Main testing needs only done with Chess connect. Or I need to reach out to the programmer of Chess COnnect
+  // Also test Chess Connect with my original Millennium Board
+  if (lifted > 0 ||
+      setBack > 0 ||
+      // Certabo boards sends position even when no change happend:
+      chessBoard.emulation == 0 ||
+      // Auto-update on Millennium boards:
+      // Shortest possible timing for Chesstimation module seems to be ~500ms
+      // ((actMillis-oldMessageMillis>eeprom[3]*4) && eeprom[2]==2) ||
+      // ((actMillis - oldMessageMillis > 500) && eeprom[2] == 2) ||
+      ((actMillis - oldMessageMillis > 500) && (eeprom[2] == 0 || eeprom[2] == 2)))
+  {
     sendMessageToChessBoard(chessBoard.boardMessage);
     oldMessageMillis = actMillis;
   }
-  if (chessBoard.emulation == 0 && rows == 0)
-  {
-    // delay(100);
-  }
+  // if ((chessBoard.emulation == 0 || eeprom[2]==0 ) && rows == 0)
+  // {
+  //   delay(100);
+  // }
   writeToIndex = 0;
 }

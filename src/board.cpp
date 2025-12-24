@@ -1,5 +1,5 @@
 /*  
-    Copyright 2021, 2022 Andreas Petersik (andreas.petersik@gmail.com)
+    Copyright 2021, 2022, 2025 Andreas Petersik (andreas.petersik@gmail.com)
     
     This file is part of the Chesstimation Project.
 
@@ -52,7 +52,8 @@ void Board::updateMilleniumLEDs(const char* ledMessage) {
             // if(result==0x55) result = 0x33;
             // if(result==0xFF) result = 0xCC;
             milleniumLEDs[8-col][8-row]=result;
-            // if(milleniumLEDs[8-col][8-row]>0) milleniumLEDs[8-col][8-row]=0xFF; // Fix for alternate LED bug in BearChess
+            // Fix for alternate LED bug in BearChess (older version?) and Chessconnect 
+            if(milleniumLEDs[8-col][8-row]>0) milleniumLEDs[8-col][8-row]=0xFF; 
             messageIdx+=2;
         }
     }
@@ -85,6 +86,7 @@ void Board::startPosition(byte queens) {
 }
 
 Board::Board(void) {
+    promotionPieceW = promotionPieceB = 'Q';
     boardMessage[0]=0;
     liftedIdx=255;
     startPosition(0);
@@ -92,40 +94,41 @@ Board::Board(void) {
     lastRawRow [2] = lastRawRow [3] = lastRawRow [4] = lastRawRow [5] = 0; 
 }
 
-void Board::generateSerialBoardMessage(void) {
-    if (emulation==0) {
-    // Certabo
+void Board::generateSerialBoardMessage(void)
+{
+    if (emulation == 0)
+    {
+        // Certabo
         boardMessage[0] = ':';
         boardMessage[1] = 0;
         char number[13];
 
-        for(int i=0; i<64; i++) {
+        for (int i = 0; i < 64; i++)
+        {
             if (!flipped)
             {
                 sprintf(number, "0 0 0 0 %i ", piece[i]);
             }
             else
             {
-                sprintf(number, "0 0 0 0 %i ", piece[63-i]);
+                sprintf(number, "0 0 0 0 %i ", piece[63 - i]);
             }
             strcat(boardMessage, number);
         }
         strcat(boardMessage, "\r\n");
-    } else {
-    // Chesslink
+    }
+    else
+    {
+        // Chesslink
         boardMessage[0] = 's';
 
-        for(int i=0; i<64; i++) {
-            boardMessage[i+1] = flipped?FENpieceFromType(piece[i]):FENpieceFromType(piece[63-i]);
+        for (int i = 0; i < 64; i++)
+        {
+            boardMessage[i + 1] = flipped ? FENpieceFromType(piece[i]) : FENpieceFromType(piece[63 - i]);
         }
-        if (promotionPiece != 0) {
-            boardMessage[65] = '=';
-            boardMessage[66] = FENpieceFromType(promotionPiece);
-            boardMessage[67] = 0;
-            promotionPiece = 0;
-        } else {
-            boardMessage[65]=0;
-        }    }
+
+        boardMessage[65] = 0;
+    }
 }
 
 // This function is only for debug purposes and displays the board graphically via the debug serial interface
@@ -245,65 +248,202 @@ bool Board::isBlackPawn(byte piece) {
     return false;
 }
 
-byte Board::getNextPromotionPieceForWhite(byte p) {
+byte Board::getNextPromotionPieceForWhite(byte p)
+{
+    if (promotionPieceW == 'N')
+    {
+        // WN1 && WN2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == WN1)
+                p1 = true;
+            if (piece[i] == WN2)
+                p2 = true;
+        }
+        if (!p1)
+            return WN1;
+        if (!p2)
+            return WN2;
+    }
+    if (promotionPieceW == 'R')
+    {
+        // WR1 && WR2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == WR1)
+                p1 = true;
+            if (piece[i] == WR2)
+                p2 = true;
+        }
+        if (!p1)
+            return WR1;
+        if (!p2)
+            return WR2;
+    }    
+    if (promotionPieceW == 'B')
+    {
+        // WB1 && WB2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == WB1)
+                p1 = true;
+            if (piece[i] == WB2)
+                p2 = true;
+        }
+        if (!p1)
+            return WB1;
+        if (!p2)
+            return WB2;
+    }    
+    // Default is promotion to Queen:
     // WQ1 && WQ2
-    bool q1 = false;
-    bool q2 = false;
-    for(int i=0; i<64; i++) {
-        if(piece[i]==WQ1) q1=true;
-        if(piece[i]==WQ2) q2=true;
+    bool p1 = false;
+    bool p2 = false;
+    for (int i = 0; i < 64; i++)
+    {
+        if (piece[i] == WQ1)
+            p1 = true;
+        if (piece[i] == WQ2)
+            p2 = true;
     }
-    if(!q1) return WQ1;
-    if(!q2) return WQ2;
+    if (!p1)
+        return WQ1;
+    if (!p2)
+        return WQ2;
+    // Limitation: Not 2 of each promotion pieces
+    // must be on the board
+    // otherwise you get no promotion
+    // just the pawn:
     return p;
 }
 
-byte Board::getNextPromotionPieceForBlack(byte p) {
+byte Board::getNextPromotionPieceForBlack(byte p)
+{
+    if (promotionPieceB == 'N')
+    {
+        // BN1 && BN2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == BN1)
+                p1 = true;
+            if (piece[i] == BN2)
+                p2 = true;
+        }
+        if (!p1)
+            return BN1;
+        if (!p2)
+            return BN2;
+    }
+    if (promotionPieceB == 'R')
+    {
+        // BR1 && BR2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == BR1)
+                p1 = true;
+            if (piece[i] == BR2)
+                p2 = true;
+        }
+        if (!p1)
+            return BR1;
+        if (!p2)
+            return BR2;
+    }    
+    if (promotionPieceB == 'B')
+    {
+        // BB1 && BB2
+        bool p1 = false;
+        bool p2 = false;
+        for (int i = 0; i < 64; i++)
+        {
+            if (piece[i] == BB1)
+                p1 = true;
+            if (piece[i] == BB2)
+                p2 = true;
+        }
+        if (!p1)
+            return BB1;
+        if (!p2)
+            return BB2;
+    }    
+    // Default is promotion to Queen:
     // BQ1 && BQ2
-    bool q1 = false;
-    bool q2 = false;
-    for(int i=0; i<64; i++) {
-        if(piece[i]==BQ1) q1=true;
-        if(piece[i]==BQ2) q2=true;
+    bool p1 = false;
+    bool p2 = false;
+    for (int i = 0; i < 64; i++)
+    {
+        if (piece[i] == BQ1)
+            p1 = true;
+        if (piece[i] == BQ2)
+            p2 = true;
     }
-    if(!q1) return BQ1;
-    if(!q2) return BQ2;
-    return p;
-}
-
-byte Board::getPromotionPiece(byte p) {
-    if (isWhitePawn(p)) {
-        return getNextPromotionPieceForWhite(p);
-    } else if (isBlackPawn(p)) {
-        return getNextPromotionPieceForBlack(p);
-    }
+    if (!p1)
+        return BQ1;
+    if (!p2)
+        return BQ2;
+    // Limitation: Not 2 of each promotion pieces
+    // must be on the board
+    // otherwise you get no promotion
+    // just the pawn:
     return p;
 }
 
 void Board::setPieceBackTo(byte boardIndex)
 {
-    if (liftedIdx > 0)
+    if (liftedIdx == 0)
+        return;
+
+    // Check if white pawn was moved from row 7 to 8, then promote! (Internally rows are in reverse order 0-7 is 8-1)
+    if (((!flipped && getRowFromBoardIndex(boardIndex) == 0 && getRowFromBoardIndex((piecesLifted[liftedIdx - 1] >> 8)) == 1 ) ||
+        (flipped && getRowFromBoardIndex(boardIndex) == 7 && getRowFromBoardIndex((piecesLifted[liftedIdx - 1] >> 8)) == 6))
+        && isWhitePawn(0x00ff & piecesLifted[liftedIdx - 1]))
     {
         liftedIdx--;
-        if (((!flipped && getRowFromBoardIndex(boardIndex) == 0 && getRowFromBoardIndex((piecesLifted[liftedIdx] >> 8)) == 1) ||
-            (flipped && getRowFromBoardIndex(boardIndex) == 7 && getRowFromBoardIndex((piecesLifted[liftedIdx] >> 8)) == 6)) &&
-            isWhitePawn(0x00ff & piecesLifted[liftedIdx]))
+        if (liftedIdx >= 0)
         {
-            piece[boardIndex] = getPromotionPiece(0x00ff & piecesLifted[liftedIdx]);
+            piece[boardIndex] = getNextPromotionPieceForWhite(0x00ff & piecesLifted[liftedIdx]);
+            // When a promotion is done, set next promotion to Queen as default again:
+            promotionPieceW = 'Q';
+
         }
-        // Check if black pawn was moved from row 2 to 1, then promote! (Internally rows are in reverse order 0-7 is 8-1)
-        else if ((((!flipped) && getRowFromBoardIndex(boardIndex) == 7 && getRowFromBoardIndex((piecesLifted[liftedIdx] >> 8)) == 6) ||
-                    (flipped && getRowFromBoardIndex(boardIndex) == 0 && getRowFromBoardIndex((piecesLifted[liftedIdx] >> 8)) == 1)) &&
-                    isBlackPawn(0x00ff & piecesLifted[liftedIdx]))
+    }
+    // Check if black pawn was moved from row 2 to 1, then promote! (Internally rows are in reverse order 0-7 is 8-1)
+    else if ((((!flipped) && getRowFromBoardIndex(boardIndex) == 7 && getRowFromBoardIndex((piecesLifted[liftedIdx - 1] >> 8)) == 6 ) ||
+             (flipped && getRowFromBoardIndex(boardIndex) == 0 && getRowFromBoardIndex((piecesLifted[liftedIdx - 1] >> 8)) == 1 ))
+             && isBlackPawn(0x00ff & piecesLifted[liftedIdx - 1]))
+    {
+        liftedIdx--;
+        if (liftedIdx >= 0)
         {
-            piece[boardIndex] = getPromotionPiece(0x00ff & piecesLifted[liftedIdx]);
+            piece[boardIndex] = getNextPromotionPieceForBlack(0x00ff & piecesLifted[liftedIdx]);
+            // When a promotion is done, set next promotion to Queen as default again:
+            promotionPieceB = 'Q';
         }
-        else
+    }
+    else
+    {
+        liftedIdx--;
+        if (liftedIdx >= 0)
         {
             piece[boardIndex] = 0x00ff & piecesLifted[liftedIdx];
         }
+    }
+    if (liftedIdx >= 0)
+    {
         piecesLifted[liftedIdx] = 0x0000;
-    }}
+    }
+}
+
 void Board::liftPieceFrom(byte boardIndex) {
       if(piece[boardIndex]==EMP) 
       {
