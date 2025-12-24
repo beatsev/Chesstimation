@@ -72,6 +72,7 @@ byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,5
 byte oldBoard[64];
 int brightness = 255;
 uint16_t calibrationData[5];
+bool promotingWhitePawn = true;  // Track which color pawn is promoting
 
 //BLE objects
 BLEServer *pServer = NULL;
@@ -1010,22 +1011,22 @@ static void event_handler(lv_event_t *e)
     }
     if (obj == promotionQueenBtn)
     {
-      chessBoard.promotionPiece = WQ1;
+      chessBoard.promotionPiece = promotingWhitePawn ? WQ1 : BQ1;
       lv_scr_load(screenMain);
     }
     if (obj == promotionRookBtn)
     {
-      chessBoard.promotionPiece = WR1;
+      chessBoard.promotionPiece = promotingWhitePawn ? WR1 : BR1;
       lv_scr_load(screenMain);
     }
     if (obj == promotionBishopBtn)
     {
-      chessBoard.promotionPiece = WB1;
+      chessBoard.promotionPiece = promotingWhitePawn ? WB1 : BB1;
       lv_scr_load(screenMain);
     }
     if (obj == promotionKnightBtn)
     {
-      chessBoard.promotionPiece = WN1;
+      chessBoard.promotionPiece = promotingWhitePawn ? WN1 : BN1;
       lv_scr_load(screenMain);
     }
   }
@@ -1887,8 +1888,20 @@ void loop()
     int diff = (bitRead(chessBoard.lastRawRow[i], col) - bitRead(readRawRow[i], col));
       if(diff<0) {
         if (chessBoard.isWhitePawn(0x00ff & chessBoard.piecesLifted[chessBoard.liftedIdx - 1]) && (getRowFromBoardIndex(toBoardIndex(i, col)) == 0)) {
+          promotingWhitePawn = true;
+          // Update promotion screen to show white pieces
+          lv_imgbtn_set_src(promotionQueenBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WQ40, NULL);
+          lv_imgbtn_set_src(promotionRookBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WR40, NULL);
+          lv_imgbtn_set_src(promotionBishopBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WB40, NULL);
+          lv_imgbtn_set_src(promotionKnightBtn, LV_IMGBTN_STATE_RELEASED, NULL, &WN40, NULL);
           lv_scr_load(promotionScreen);
         } else if (chessBoard.isBlackPawn(0x00ff & chessBoard.piecesLifted[chessBoard.liftedIdx - 1]) && (getRowFromBoardIndex(toBoardIndex(i, col)) == 7)) {
+          promotingWhitePawn = false;
+          // Update promotion screen to show black pieces
+          lv_imgbtn_set_src(promotionQueenBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BQ40, NULL);
+          lv_imgbtn_set_src(promotionRookBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BR40, NULL);
+          lv_imgbtn_set_src(promotionBishopBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BB40, NULL);
+          lv_imgbtn_set_src(promotionKnightBtn, LV_IMGBTN_STATE_RELEASED, NULL, &BN40, NULL);
           lv_scr_load(promotionScreen);
         }
         chessBoard.setPieceBackTo(toBoardIndex(i, col));
