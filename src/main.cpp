@@ -26,7 +26,6 @@
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
 #include <driver/adc.h>
-#include <BluetoothSerial.h>
 #include "lv_i18n.h"
 
 #include <BLEDevice.h>
@@ -60,7 +59,6 @@
 
 Mephisto mephisto;
 Board chessBoard;
-BluetoothSerial SerialBT;
 
 static void extinguishBoardLEDs();
 char modeBleAdvertisedName[] = "MILLENNIUM CHESS";
@@ -68,7 +66,7 @@ char modeBleAdvertisedName[] = "MILLENNIUM CHESS";
 int millBLEinitialized = 0;
 int physicalConformity = 0;
 
-enum connectionType {USB, BT, BLE} connection;  // Should be same order as in UI
+enum connectionType {USB, BLE} connection;  // Should be same order as in UI
 enum languageType {EN, ES, DE} language;        // Should be same order as in UI
 
 byte readRawRow[8];
@@ -184,16 +182,12 @@ void displayAboutBox()
 
 byte debugPrint(const char *message)
 {
-  if(connection != USB) 
+  if(connection == USB)
   {
     Serial.print(message);
     return 1;
   }
-  if(connection != BT) 
-  {
-    SerialBT.print(message);
-    return 1;
-  }
+  // BLE doesn't use debug prints (uses characteristics)
   return 0;
 }
 
@@ -216,14 +210,9 @@ void startTouchCalibration()
 
 byte debugPrintln(const char *message)
 {
-  if(connection != USB) 
+  if(connection == USB)
   {
     Serial.println(message);
-    return 1;
-  }
-  if(connection != BT) 
-  {
-    SerialBT.println(message);
     return 1;
   }
   return 0;
@@ -243,10 +232,7 @@ void saveBoardSettings(void)
   {
     saveConnection = BLE;
   }
-  if (connection == BT)
-  {
-    saveConnection = BT;
-  }
+  // BT removed - only USB and BLE supported now
 
   // store data
   File f = SPIFFS.open(BOARD_SETUP_FILE, "w");
@@ -312,7 +298,11 @@ void loadBoardSettings(void)
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
-        connection = (connectionType)tempInt8[0];
+        // Map old BT (value 1) to USB for backward compatibility
+        if (tempInt8[0] == 0) connection = USB;      // 0 = USB
+        else if (tempInt8[0] == 1) connection = USB; // 1 = old BT, map to USB
+        else if (tempInt8[0] >= 2) connection = BLE; // 2+ = BLE
+        else connection = USB; // Default to USB
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
@@ -391,17 +381,12 @@ void sendMessageToChessBoard(const char *message)
     {
       debugPrintln("*** Semaphore could not be taken - ERROR sending message ***");
     }
+    return; // Exit after BLE send
   }
-  if (connection == BT)
-  {
-    SerialBT.print(codedMessage.c_str());
-    SerialBT.flush();
-  }
-  if (connection == USB)
-  {
-    Serial.print(codedMessage.c_str());
-    Serial.flush();
-  }
+
+  // USB communication
+  Serial.print(codedMessage.c_str());
+  Serial.flush();
 }
 
 void updateSettingsScreen()
@@ -716,51 +701,34 @@ void initBleServiceChesslink()
 
 void initSerialPortCommunication(void)
 {
-  if (connection != USB)
+  if (connection == USB)
   {
-    // Serial Port is used for debugging!
-    // Serial.end();
-    Serial.begin(115200);
-  }
-  else if (connection != BT)
-  {
-    // SerialBT.end();
-    SerialBT.begin("Chesstimation DEBUG");
-  }
-  if (chessBoard.emulation == 0)
-  {
-    if (connection == USB)
+    // USB Serial communication
+    if (chessBoard.emulation == 0)
     {
-      // Serial.end();
       Serial.begin(38400);
     }
-    if(connection == BT)
+    else // chessBoard.emulation == 1
     {
-      // SerialBT.end();
-      SerialBT.begin("Certabo");
+      Serial.begin(38400, SERIAL_7O1);
     }
   }
-  if (chessBoard.emulation == 1)
+  else if (connection == BLE)
   {
-    if (connection == USB)
+    // BLE only supports Chesslink emulation
+    if (chessBoard.emulation != 1)
     {
-      // Serial.end();
-      Serial.begin(38400, SERIAL_7O1);
-      // Serial.begin(38400); // ESP32 S3, SERIAL_7O1);
+      debugPrintln("BLE only supports Chesslink emulation!");
+      chessBoard.emulation = 1; // Force Chesslink for BLE
     }
-    if(connection == BT)
-    {
-      // SerialBT.end();
-      SerialBT.begin("MILLENNIUM CHESS BT");
-    }
-    if(connection == BLE)
-    {
-      initBleServiceChesslink();
-    }
+    initBleServiceChesslink();
+
+    // Serial for debugging when using BLE
+    Serial.begin(115200);
   }
 
   // Update UI:
-  if(connection == USB) 
+  if(connection == USB)
   {
     lv_label_set_text(connectionLbl, LV_SYMBOL_USB);
   }
@@ -1486,7 +1454,7 @@ void createSettingsScreen()
   lv_obj_set_align(commLbl, LV_ALIGN_LEFT_MID );
 
   connectionDd = lv_dropdown_create(object);
-  lv_dropdown_set_options_static(connectionDd, "USB\nBT\nBLE");
+  lv_dropdown_set_options_static(connectionDd, "USB\nBLE");
   lv_obj_set_align(connectionDd, LV_ALIGN_RIGHT_MID );
   lv_obj_set_style_pad_all(connectionDd, 4, 0);
   lv_obj_set_size(connectionDd, 80, LV_SIZE_CONTENT);  
@@ -1967,21 +1935,7 @@ void loop()
         }
       };
     }
-    if (connection == BT)
-    {
-      while (SerialBT.available())
-      {
-        led_buffer[writeToIndex] = SerialBT.read();
-
-        writeToIndex++;
-        if (writeToIndex > 7)
-        {
-          writeToIndex = 0;
-          SerialBT.println("L");
-          SerialBT.flush();
-        }
-      };
-    }
+    // BLE uses characteristic-based communication, not serial
   }
 
   if ((chessBoard.emulation == 1) && connection != BLE) // Millennium Chesslink
@@ -2000,19 +1954,7 @@ void loop()
         sendChesslinkAnswer(incomingMessage);
       }
     }
-    if (connection == BT)
-    {
-      if (SerialBT.available() > 0)
-      {
-        for (int i = 0; i < SerialBT.available(); i++)
-        {
-          SerialBT.readBytes(&readChar, 1);
-
-          assembleIncomingChesslinkMessage(readChar);
-        }
-        sendChesslinkAnswer(incomingMessage);
-      }
-    }
+    // BLE message handling done via MyCallbacksChesslink::onWrite()
   }
 
   if(chessBoard.emulation==1) // Millennium Chesslink
