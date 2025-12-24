@@ -1160,6 +1160,7 @@ static void event_handler(lv_event_t *e)
     }
     else if (obj == exitSettingsBtn)
     {
+      saveBoardSettings();
       lv_scr_load(screenMain);
     }
     // Promotion Button Event:
@@ -1215,6 +1216,7 @@ static void event_handler(lv_event_t *e)
         if((lv_obj_get_state(certaboCB) & LV_STATE_CHECKED) != 1)
         {
           connection = tempConnection;
+          initSerialPortCommunication();
         }
         else
         {
@@ -1224,6 +1226,7 @@ static void event_handler(lv_event_t *e)
       else
       {
         connection = tempConnection;
+        initSerialPortCommunication();
       }
     }
     if (obj == langDd)
@@ -1256,6 +1259,13 @@ static void event_handler(lv_event_t *e)
       if ((lv_obj_get_state(certaboCB) & LV_STATE_CHECKED) == 1)
       {
         chessBoard.emulation = 0;
+        // BLE doesn't support Certabo, switch to USB if BLE is selected
+        if (connection == BLE)
+        {
+          connection = USB;
+          lv_dropdown_set_selected(connectionDd, USB);
+        }
+        initSerialPortCommunication();
       }
     }
 #ifdef PEGASUS
@@ -1264,6 +1274,7 @@ static void event_handler(lv_event_t *e)
       if ((lv_obj_get_state(pegasusCB) & LV_STATE_CHECKED) == 1)
       {
         chessBoard.emulation = 2;
+        initSerialPortCommunication();
       }
     }
 #endif
@@ -1272,6 +1283,7 @@ static void event_handler(lv_event_t *e)
       if ((lv_obj_get_state(chesslinkCB) & LV_STATE_CHECKED) == 1)
       {
         chessBoard.emulation = 1;
+        initSerialPortCommunication();
       }
     }
     if (obj == flippedCB)
