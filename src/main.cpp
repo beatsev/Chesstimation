@@ -72,6 +72,17 @@ enum languageType {EN, ES, DE} language;        // Should be same order as in UI
 byte readRawRow[8];
 byte led_buffer[8];
 byte mephistoLED[8][8];
+
+#define LED_QUEUE_SIZE 10
+struct LedQueueEntry {
+    unsigned long timestamp;
+    byte leds[9][9];
+};
+LedQueueEntry ledQueue[LED_QUEUE_SIZE];
+byte ledQueueHead = 0;
+byte ledQueueTail = 0;
+byte ledQueueCount = 0;
+
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
 byte oldBoard[64];
@@ -333,6 +344,42 @@ void updateMephistoLEDs(byte mephistoLED[8][8]) {
   }
 }
 
+bool isLedQueueEmpty() {
+  return ledQueueCount == 0;
+}
+
+bool isLedQueueFull() {
+  return ledQueueCount >= LED_QUEUE_SIZE;
+}
+
+void enqueueLedMessage() {
+  if (isLedQueueFull()) {
+    return;
+  }
+  ledQueue[ledQueueHead].timestamp = millis();
+  for (byte col = 0; col < 9; col++) {
+    for (byte row = 0; row < 9; row++) {
+      ledQueue[ledQueueHead].leds[col][row] = chessBoard.milleniumLEDs[col][row];
+    }
+  }
+  ledQueueHead = (ledQueueHead + 1) % LED_QUEUE_SIZE;
+  ledQueueCount++;
+}
+
+bool dequeueLedMessage() {
+  if (isLedQueueEmpty()) {
+    return false;
+  }
+  for (byte col = 0; col < 9; col++) {
+    for (byte row = 0; row < 9; row++) {
+      chessBoard.milleniumLEDs[col][row] = ledQueue[ledQueueTail].leds[col][row];
+    }
+  }
+  ledQueueTail = (ledQueueTail + 1) % LED_QUEUE_SIZE;
+  ledQueueCount--;
+  return true;
+}
+
 byte getOddParity(byte value)
 {
   value ^= value >> 4;
@@ -542,7 +589,7 @@ void sendChesslinkAnswer(char *incomingMessage)
       debugPrintln("");
     }
     debugPrintln("");
-    updateMephistoLEDs(mephistoLED);
+    enqueueLedMessage();
     millBLEinitialized = 1;
     return;
   }
@@ -559,7 +606,7 @@ void sendChesslinkAnswer(char *incomingMessage)
     debugPrintln(incomingMessage);
     sendMessageToChessBoard("x");
     chessBoard.extinguishMilleniumLEDs();
-    updateMephistoLEDs(mephistoLED);
+    enqueueLedMessage();
     millBLEinitialized = 1;
     return;
   }
@@ -1967,6 +2014,15 @@ void loop()
       }
     }
     // BLE message handling done via MyCallbacksChesslink::onWrite()
+  }
+
+  if (chessBoard.emulation == 1)
+  {
+    if (!isLedQueueEmpty())
+    {
+      dequeueLedMessage();
+      updateMephistoLEDs(mephistoLED);
+    }
   }
 
   if(chessBoard.emulation==1) // Millennium Chesslink
