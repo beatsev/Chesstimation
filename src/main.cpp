@@ -73,12 +73,8 @@ byte readRawRow[8];
 byte led_buffer[8];
 byte mephistoLED[8][8];
 
-struct LedPendingState {
-    byte leds[9][9];
-};
-LedPendingState ledPending;
-bool ledPendingValid = false;
-portMUX_TYPE ledQueueMux = portMUX_INITIALIZER_UNLOCKED;
+// Spinlock to protect mephistoLED between BLE task (Core 0) and main loop (Core 1).
+portMUX_TYPE mephistoMux = portMUX_INITIALIZER_UNLOCKED;
 
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
@@ -341,37 +337,6 @@ void updateMephistoLEDs(byte mephistoLED[8][8]) {
   }
 }
 
-// Store the current milleniumLEDs state as the pending LED update.
-// Newer calls overwrite previous pending state, so only the latest is ever applied.
-// Safe to call from BLE task (protected by ledQueueMux).
-void storeLedMessage() {
-  portENTER_CRITICAL(&ledQueueMux);
-  for (byte col = 0; col < 9; col++) {
-    for (byte row = 0; row < 9; row++) {
-      ledPending.leds[col][row] = chessBoard.milleniumLEDs[col][row];
-    }
-  }
-  ledPendingValid = true;
-  portEXIT_CRITICAL(&ledQueueMux);
-}
-
-// Apply the pending LED state to milleniumLEDs if one is waiting.
-// Called from main loop only.
-bool applyPendingLed() {
-  portENTER_CRITICAL(&ledQueueMux);
-  if (!ledPendingValid) {
-    portEXIT_CRITICAL(&ledQueueMux);
-    return false;
-  }
-  for (byte col = 0; col < 9; col++) {
-    for (byte row = 0; row < 9; row++) {
-      chessBoard.milleniumLEDs[col][row] = ledPending.leds[col][row];
-    }
-  }
-  ledPendingValid = false;
-  portEXIT_CRITICAL(&ledQueueMux);
-  return true;
-}
 
 byte getOddParity(byte value)
 {
@@ -582,7 +547,9 @@ void sendChesslinkAnswer(char *incomingMessage)
       debugPrintln("");
     }
     debugPrintln("");
-    storeLedMessage();
+    portENTER_CRITICAL(&mephistoMux);
+    updateMephistoLEDs(mephistoLED);
+    portEXIT_CRITICAL(&mephistoMux);
     millBLEinitialized = 1;
     return;
   }
@@ -599,7 +566,9 @@ void sendChesslinkAnswer(char *incomingMessage)
     debugPrintln(incomingMessage);
     sendMessageToChessBoard("x");
     chessBoard.extinguishMilleniumLEDs();
-    storeLedMessage();
+    portENTER_CRITICAL(&mephistoMux);
+    updateMephistoLEDs(mephistoLED);
+    portEXIT_CRITICAL(&mephistoMux);
     millBLEinitialized = 1;
     return;
   }
@@ -2011,12 +1980,8 @@ void loop()
 
   if (chessBoard.emulation == 1) // Millennium Chesslink
   {
-    if (applyPendingLed())
-    {
-      updateMephistoLEDs(mephistoLED);
-    }
-
-    // Translate MephistoLEDs into led_buffer:
+    // Translate MephistoLEDs into led_buffer (lock protects against BLE task writing mephistoLED):
+    portENTER_CRITICAL(&mephistoMux);
     for (byte row = 0; row < 8; row++)
     {
       byte rowValue = 0;
@@ -2030,6 +1995,7 @@ void loop()
       }
       led_buffer[row] = rowValue;
     }
+    portEXIT_CRITICAL(&mephistoMux);
   }
 
   // Read row status from board:
@@ -2107,13 +2073,7 @@ void loop()
     byte ledValue = chessBoard.flipped ? (led_buffer[7 - i] * 0x0202020202ULL & 0x010884422010ULL) % 1023 : led_buffer[i];
     mephisto.writeRow(7 - i, ledValue);
     if (ledValue != 0)
-    {
-      // Interruptible delay: exit early if a new LED message arrives from BLE,
-      // so the next loop iteration can apply the fresh state without the full 300ms wait.
-      unsigned long endTime = millis() + LED_TIME / rows;
-      while (millis() < endTime && !ledPendingValid)
-        delay(1);
-    }
+      delay(LED_TIME / rows);
   }
 
   setBack = 0;
