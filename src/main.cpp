@@ -2107,7 +2107,13 @@ void loop()
     byte ledValue = chessBoard.flipped ? (led_buffer[7 - i] * 0x0202020202ULL & 0x010884422010ULL) % 1023 : led_buffer[i];
     mephisto.writeRow(7 - i, ledValue);
     if (ledValue != 0)
-      delay(LED_TIME / rows);
+    {
+      // Interruptible delay: exit early if a new LED message arrives from BLE,
+      // so the next loop iteration can apply the fresh state without the full 300ms wait.
+      unsigned long endTime = millis() + LED_TIME / rows;
+      while (millis() < endTime && !ledPendingValid)
+        delay(1);
+    }
   }
 
   setBack = 0;
