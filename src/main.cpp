@@ -75,13 +75,13 @@ byte mephistoLED[8][8];
 
 #define LED_QUEUE_SIZE 10
 struct LedQueueEntry {
-    unsigned long timestamp;
     byte leds[9][9];
 };
 LedQueueEntry ledQueue[LED_QUEUE_SIZE];
 byte ledQueueHead = 0;
 byte ledQueueTail = 0;
 byte ledQueueCount = 0;
+portMUX_TYPE ledQueueMux = portMUX_INITIALIZER_UNLOCKED;
 
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
@@ -353,10 +353,12 @@ bool isLedQueueFull() {
 }
 
 void enqueueLedMessage() {
+  portENTER_CRITICAL(&ledQueueMux);
   if (isLedQueueFull()) {
+    portEXIT_CRITICAL(&ledQueueMux);
+    debugPrintln("LED queue full, dropping message");
     return;
   }
-  ledQueue[ledQueueHead].timestamp = millis();
   for (byte col = 0; col < 9; col++) {
     for (byte row = 0; row < 9; row++) {
       ledQueue[ledQueueHead].leds[col][row] = chessBoard.milleniumLEDs[col][row];
@@ -364,10 +366,13 @@ void enqueueLedMessage() {
   }
   ledQueueHead = (ledQueueHead + 1) % LED_QUEUE_SIZE;
   ledQueueCount++;
+  portEXIT_CRITICAL(&ledQueueMux);
 }
 
 bool dequeueLedMessage() {
+  portENTER_CRITICAL(&ledQueueMux);
   if (isLedQueueEmpty()) {
+    portEXIT_CRITICAL(&ledQueueMux);
     return false;
   }
   for (byte col = 0; col < 9; col++) {
@@ -377,6 +382,7 @@ bool dequeueLedMessage() {
   }
   ledQueueTail = (ledQueueTail + 1) % LED_QUEUE_SIZE;
   ledQueueCount--;
+  portEXIT_CRITICAL(&ledQueueMux);
   return true;
 }
 
@@ -2016,19 +2022,15 @@ void loop()
     // BLE message handling done via MyCallbacksChesslink::onWrite()
   }
 
-  if (chessBoard.emulation == 1)
+  if (chessBoard.emulation == 1) // Millennium Chesslink
   {
     if (!isLedQueueEmpty())
     {
       dequeueLedMessage();
       updateMephistoLEDs(mephistoLED);
     }
-  }
 
-  if(chessBoard.emulation==1) // Millennium Chesslink
-  {
     // Translate MephistoLEDs into led_buffer:
-
     for (byte row = 0; row < 8; row++)
     {
       byte rowValue = 0;
