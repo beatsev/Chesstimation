@@ -73,14 +73,11 @@ byte readRawRow[8];
 byte led_buffer[8];
 byte mephistoLED[8][8];
 
-#define LED_QUEUE_SIZE 10
-struct LedQueueEntry {
+struct LedPendingState {
     byte leds[9][9];
 };
-LedQueueEntry ledQueue[LED_QUEUE_SIZE];
-byte ledQueueHead = 0;
-byte ledQueueTail = 0;
-byte ledQueueCount = 0;
+LedPendingState ledPending;
+bool ledPendingValid = false;
 portMUX_TYPE ledQueueMux = portMUX_INITIALIZER_UNLOCKED;
 
 byte eeprom[5]={0,20,3,20,15};
@@ -344,44 +341,34 @@ void updateMephistoLEDs(byte mephistoLED[8][8]) {
   }
 }
 
-bool isLedQueueEmpty() {
-  return ledQueueCount == 0;
-}
-
-bool isLedQueueFull() {
-  return ledQueueCount >= LED_QUEUE_SIZE;
-}
-
-void enqueueLedMessage() {
+// Store the current milleniumLEDs state as the pending LED update.
+// Newer calls overwrite previous pending state, so only the latest is ever applied.
+// Safe to call from BLE task (protected by ledQueueMux).
+void storeLedMessage() {
   portENTER_CRITICAL(&ledQueueMux);
-  if (isLedQueueFull()) {
-    portEXIT_CRITICAL(&ledQueueMux);
-    debugPrintln("LED queue full, dropping message");
-    return;
-  }
   for (byte col = 0; col < 9; col++) {
     for (byte row = 0; row < 9; row++) {
-      ledQueue[ledQueueHead].leds[col][row] = chessBoard.milleniumLEDs[col][row];
+      ledPending.leds[col][row] = chessBoard.milleniumLEDs[col][row];
     }
   }
-  ledQueueHead = (ledQueueHead + 1) % LED_QUEUE_SIZE;
-  ledQueueCount++;
+  ledPendingValid = true;
   portEXIT_CRITICAL(&ledQueueMux);
 }
 
-bool dequeueLedMessage() {
+// Apply the pending LED state to milleniumLEDs if one is waiting.
+// Called from main loop only.
+bool applyPendingLed() {
   portENTER_CRITICAL(&ledQueueMux);
-  if (isLedQueueEmpty()) {
+  if (!ledPendingValid) {
     portEXIT_CRITICAL(&ledQueueMux);
     return false;
   }
   for (byte col = 0; col < 9; col++) {
     for (byte row = 0; row < 9; row++) {
-      chessBoard.milleniumLEDs[col][row] = ledQueue[ledQueueTail].leds[col][row];
+      chessBoard.milleniumLEDs[col][row] = ledPending.leds[col][row];
     }
   }
-  ledQueueTail = (ledQueueTail + 1) % LED_QUEUE_SIZE;
-  ledQueueCount--;
+  ledPendingValid = false;
   portEXIT_CRITICAL(&ledQueueMux);
   return true;
 }
@@ -595,7 +582,7 @@ void sendChesslinkAnswer(char *incomingMessage)
       debugPrintln("");
     }
     debugPrintln("");
-    enqueueLedMessage();
+    storeLedMessage();
     millBLEinitialized = 1;
     return;
   }
@@ -612,7 +599,7 @@ void sendChesslinkAnswer(char *incomingMessage)
     debugPrintln(incomingMessage);
     sendMessageToChessBoard("x");
     chessBoard.extinguishMilleniumLEDs();
-    enqueueLedMessage();
+    storeLedMessage();
     millBLEinitialized = 1;
     return;
   }
@@ -2024,9 +2011,8 @@ void loop()
 
   if (chessBoard.emulation == 1) // Millennium Chesslink
   {
-    if (!isLedQueueEmpty())
+    if (applyPendingLed())
     {
-      dequeueLedMessage();
       updateMephistoLEDs(mephistoLED);
     }
 
