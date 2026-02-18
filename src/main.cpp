@@ -76,6 +76,17 @@ byte mephistoLED[8][8];
 // Spinlock to protect mephistoLED between BLE task (Core 0) and main loop (Core 1).
 portMUX_TYPE mephistoMux = portMUX_INITIALIZER_UNLOCKED;
 
+// Pending BLE responses: flags set in onWrite callback (Core 0), drained in main loop (Core 1).
+// Never call notify() from inside a BLE callback — it blocks the BLE task and causes growing lag.
+volatile bool pendingLedAck = false;
+volatile bool pendingXAck = false;
+volatile bool pendingBoardState = false;
+volatile bool pendingVersionResponse = false;
+volatile bool pendingIResponse = false;
+portMUX_TYPE pendingRespMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool pendingCustomMsg = false;
+char pendingCustomMsgBuf[16] = "";
+
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
 byte oldBoard[64];
@@ -473,7 +484,7 @@ void sendChesslinkAnswer(char *incomingMessage)
   {
     debugPrint("Detected valid incoming Version Request Message V: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("v0017");  // identify as Millennium Exclusive board: v0.23 in WhitePawn (00.00 - 00.FF)
+    pendingVersionResponse = true;
     return;
   }
   if (strlen(incomingMessage) == 5 && incomingMessage[0] == 'R')
@@ -489,7 +500,10 @@ void sendChesslinkAnswer(char *incomingMessage)
     debugPrintln(twoDigits);
     incomingMessage[3] = twoDigits[0];
     incomingMessage[4] = twoDigits[1];
-    sendMessageToChessBoard(incomingMessage);
+    portENTER_CRITICAL(&pendingRespMux);
+    strncpy(pendingCustomMsgBuf, incomingMessage, 15);
+    pendingCustomMsg = true;
+    portEXIT_CRITICAL(&pendingRespMux);
     return;
   }
   if (strlen(incomingMessage) == 7 && incomingMessage[0] == 'W')
@@ -510,26 +524,24 @@ void sendChesslinkAnswer(char *incomingMessage)
     debugPrintln(String(eeprom[incomingMessage[2] - '0']).c_str());
 
     incomingMessage[5] = 0;
-    sendMessageToChessBoard(incomingMessage);
+    portENTER_CRITICAL(&pendingRespMux);
+    strncpy(pendingCustomMsgBuf, incomingMessage, 15);
+    pendingCustomMsg = true;
+    portEXIT_CRITICAL(&pendingRespMux);
     return;
   }
   if (strlen(incomingMessage) == 3 && (strcmp(incomingMessage, "S53") == 0))
   {
     debugPrint("Detected valid incoming Status request Message S: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard(chessBoard.boardMessage);
+    pendingBoardState = true;
     return;
   }
   if (strlen(incomingMessage) == 167 && incomingMessage[0] == 'L')
   {
     debugPrint("Detected incoming set LED Message L: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("l");
-    // Does not help to get the LEDs work with the Chess Link App:
-    // chessBoard.generateSerialBoardMessage();
-    // sendMessageToChessBoard(chessBoard.boardMessage);
-    // sendMessageToChessBoard(chessBoard.boardMessage);
-    // sendMessageToChessBoard(chessBoard.boardMessage);
+    pendingLedAck = true;
 
     incomingMessage[165] = 0;
     chessBoard.updateMilleniumLEDs((&incomingMessage[1]));
@@ -557,14 +569,14 @@ void sendChesslinkAnswer(char *incomingMessage)
   {
     debugPrint("Detected incoming Message I: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("iFF\n");  // Don't understand I-Message!
+    pendingIResponse = true;
     return;
   }
   if (strlen(incomingMessage) == 3 && (strcmp(incomingMessage, "X58") == 0))
   {
     debugPrint("Detected valid incoming Message X: ");
     debugPrintln(incomingMessage);
-    sendMessageToChessBoard("x");
+    pendingXAck = true;
     chessBoard.extinguishMilleniumLEDs();
     portENTER_CRITICAL(&mephistoMux);
     updateMephistoLEDs(mephistoLED);
@@ -1976,6 +1988,27 @@ void loop()
       }
     }
     // BLE message handling done via MyCallbacksChesslink::onWrite()
+  }
+
+  // Drain pending BLE responses set by onWrite callback (Core 0).
+  // Sending notify() from inside a BLE callback blocks the BLE task and causes growing LED lag.
+  // All BLE TX must happen here on the main loop (Core 1).
+  if (chessBoard.emulation == 1 && connection == BLE)
+  {
+    if (pendingVersionResponse) { pendingVersionResponse = false; sendMessageToChessBoard("v0017"); }
+    if (pendingBoardState)      { pendingBoardState      = false; sendMessageToChessBoard(chessBoard.boardMessage); }
+    if (pendingLedAck)          { pendingLedAck          = false; sendMessageToChessBoard("l"); }
+    if (pendingXAck)            { pendingXAck            = false; sendMessageToChessBoard("x"); }
+    if (pendingIResponse)       { pendingIResponse       = false; sendMessageToChessBoard("iFF\n"); }
+    if (pendingCustomMsg)
+    {
+      char tmpMsg[16];
+      portENTER_CRITICAL(&pendingRespMux);
+      strncpy(tmpMsg, (const char *)pendingCustomMsgBuf, 15);
+      pendingCustomMsg = false;
+      portEXIT_CRITICAL(&pendingRespMux);
+      sendMessageToChessBoard(tmpMsg);
+    }
   }
 
   if (chessBoard.emulation == 1) // Millennium Chesslink
