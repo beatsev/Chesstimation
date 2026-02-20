@@ -475,7 +475,8 @@ class MyServerCallbacks : public BLEServerCallbacks
     conn_params.min_int  = 0x08;  // 10ms  (0x08 × 1.25ms)
     conn_params.max_int  = 0x18;  // 30ms  (0x18 × 1.25ms)
     conn_params.timeout  = 400;   // 4s supervision timeout
-    esp_ble_gap_update_conn_params(&conn_params);
+    esp_err_t err = esp_ble_gap_update_conn_params(&conn_params);
+    Serial.printf("[DBG] onConnect(ext): conn interval update sent, err=%d\n", err);
   };
 
   void onDisconnect(BLEServer *pServer)
@@ -543,6 +544,9 @@ void sendChesslinkAnswer(char *incomingMessage)
   }
   if (strlen(incomingMessage) == 167 && incomingMessage[0] == 'L')
   {
+    static uint32_t lCount = 0;
+    lCount++;
+    Serial.printf("[L] #%u arrived at %lu ms\n", lCount, millis());
     debugPrint("Detected incoming set LED Message L: ");
     debugPrintln(incomingMessage);
     pendingLedAck = true;
@@ -683,7 +687,11 @@ static void ledAckTask(void *pvParameters)
     if (pendingLedAck && chessBoard.emulation == 1 && connection == BLE)
     {
       pendingLedAck = false;
+      static uint32_t ackCount = 0;
+      ackCount++;
+      Serial.printf("[l] ACK #%u sent at %lu ms (task)\n", ackCount, millis());
       sendMessageToChessBoard("l");
+      Serial.printf("[l] ACK #%u sendMsg done at %lu ms\n", ackCount, millis());
     }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
@@ -2024,6 +2032,7 @@ void loop()
   if (pendingLedAck && chessBoard.emulation == 1 && connection == BLE)
   {
     pendingLedAck = false;
+    Serial.printf("[l] ACK sent at %lu ms (LOOP fallback)\n", millis());
     sendMessageToChessBoard("l");
   }
 
