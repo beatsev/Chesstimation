@@ -469,14 +469,21 @@ class MyServerCallbacks : public BLEServerCallbacks
   // interval, so 14 engine-analysis L messages × 1s = 14s of LED lag per move.
   void onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
   {
+    // Log the connection interval iOS actually negotiated at connect time.
+    uint16_t initInterval = param->connect.conn_params.interval; // units of 1.25ms
+    Serial.printf("[BLE] Connected: initial interval=%u (%.1fms)\n",
+                  initInterval, initInterval * 1.25f);
+
+    // Request a shorter interval post-connect.  Min=20ms — Apple rejects < 15ms
+    // for non-HID devices; 10ms was likely causing the update to be rejected.
     esp_ble_conn_update_params_t conn_params = {};
     memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
     conn_params.latency  = 0;
-    conn_params.min_int  = 0x08;  // 10ms  (0x08 × 1.25ms)
-    conn_params.max_int  = 0x18;  // 30ms  (0x18 × 1.25ms)
+    conn_params.min_int  = 0x10;  // 20ms  (0x10 × 1.25ms)
+    conn_params.max_int  = 0x20;  // 40ms  (0x20 × 1.25ms)
     conn_params.timeout  = 400;   // 4s supervision timeout
     esp_err_t err = esp_ble_gap_update_conn_params(&conn_params);
-    Serial.printf("[DBG] onConnect(ext): conn interval update sent, err=%d\n", err);
+    Serial.printf("[BLE] Conn interval update sent (20-40ms), err=%d\n", err);
   };
 
   void onDisconnect(BLEServer *pServer)
@@ -742,6 +749,11 @@ void initBleServiceChesslink()
   oAdvertisementData.setAppearance(GENERIC_HID);
 
   pServer->getAdvertising()->setAdvertisementData(oAdvertisementData);
+
+  // Advertise preferred connection interval so iOS uses it from the first connection.
+  // Apple accepts ≥20ms; 10ms was causing our post-connect request to be rejected.
+  pServer->getAdvertising()->setMinPreferred(0x10); // 20ms (0x10 × 1.25ms)
+  pServer->getAdvertising()->setMaxPreferred(0x20); // 40ms (0x20 × 1.25ms)
 
   pServer->getAdvertising()->start();
   
