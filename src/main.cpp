@@ -477,11 +477,11 @@ class MyServerCallbacks : public BLEServerCallbacks
     esp_ble_conn_update_params_t conn_params = {};
     memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
     conn_params.latency  = 0;
-    conn_params.min_int  = 0x10;  // 20ms  (0x10 × 1.25ms)
-    conn_params.max_int  = 0x20;  // 40ms  (0x20 × 1.25ms)
+    conn_params.min_int  = 0xF0;  // 300ms  (0xF0 × 1.25ms)
+    conn_params.max_int  = 0x140; // 400ms  (0x140 × 1.25ms)
     conn_params.timeout  = 400;   // 4s supervision timeout
     esp_err_t err = esp_ble_gap_update_conn_params(&conn_params);
-    Serial.printf("[BLE] Conn interval update sent (20-40ms), err=%d\n", err);
+    Serial.printf("[BLE] Conn interval update sent (300-400ms), err=%d\n", err);
   };
 
   void onDisconnect(BLEServer *pServer)
@@ -731,8 +731,8 @@ void initBleServiceChesslink()
 
   // Advertise preferred connection interval so iOS uses it from the first connection.
   // Apple accepts ≥20ms; 10ms was causing our post-connect request to be rejected.
-  pServer->getAdvertising()->setMinPreferred(0x10); // 20ms (0x10 × 1.25ms)
-  pServer->getAdvertising()->setMaxPreferred(0x20); // 40ms (0x20 × 1.25ms)
+  pServer->getAdvertising()->setMinPreferred(0xF0);  // 300ms (0xF0 × 1.25ms)
+  pServer->getAdvertising()->setMaxPreferred(0x140); // 400ms (0x140 × 1.25ms)
 
   pServer->getAdvertising()->start();
   
