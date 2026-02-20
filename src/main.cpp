@@ -76,12 +76,10 @@ byte mephistoLED[8][8];
 // Spinlock to protect mephistoLED between BLE task (Core 0) and main loop (Core 1).
 portMUX_TYPE mephistoMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Defer only the L-message ACK to the main loop (Core 1).
-// Sending "l" notify() from inside onWrite blocks the BLE task between L messages.
-// All other responses (V56, R, W, S53, I, X) stay synchronous — they are small,
-// infrequent (initialization-only), and must not be reordered or dropped.
-volatile bool pendingLedAck = false;
-static TaskHandle_t ledAckTaskHandle = NULL;
+// "l" ACK for L messages is sent directly inside onWrite() before WRITE_RSP is issued.
+// This causes MD=1 in the WRITE_RSP PDU, so the ACK is delivered in the same BLE
+// connection event as the L write, keeping ChessLink in fast-poll mode (~30ms per L).
+// All responses (V56, R, W, S53, I, X, l) stay synchronous in the callback.
 
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
@@ -556,7 +554,8 @@ void sendChesslinkAnswer(char *incomingMessage)
     Serial.printf("[L] #%u arrived at %lu ms\n", lCount, millis());
     debugPrint("Detected incoming set LED Message L: ");
     debugPrintln(incomingMessage);
-    pendingLedAck = true;
+    sendMessageToChessBoard("l");
+    Serial.printf("[l] ACK #%u sent at %lu ms (direct)\n", lCount, millis());
 
     incomingMessage[165] = 0;
     chessBoard.updateMilleniumLEDs((&incomingMessage[1]));
@@ -683,26 +682,6 @@ void initBleServicePegasus()
 }
 
 // Fast ACK task for ChessLink BLE L-messages.
-// Runs on Core 1 alongside the Arduino loop task at the same priority (1).
-// Arduino's delay() calls vTaskDelay() internally, yielding Core 1 to this task,
-// so the "l" ACK is drained within ~5 ms of arrival rather than waiting up to
-// 300 ms for the main LED-write block to finish.
-static void ledAckTask(void *pvParameters)
-{
-  for (;;)
-  {
-    if (pendingLedAck && chessBoard.emulation == 1 && connection == BLE)
-    {
-      pendingLedAck = false;
-      static uint32_t ackCount = 0;
-      ackCount++;
-      Serial.printf("[l] ACK #%u sent at %lu ms (task)\n", ackCount, millis());
-      sendMessageToChessBoard("l");
-      Serial.printf("[l] ACK #%u sendMsg done at %lu ms\n", ackCount, millis());
-    }
-    vTaskDelay(pdMS_TO_TICKS(5));
-  }
-}
 
 void initBleServiceChesslink()
 {
@@ -761,11 +740,6 @@ void initBleServiceChesslink()
   sendBLEsemaphore = xSemaphoreCreateMutex();
   xSemaphoreGive(sendBLEsemaphore);
 
-  // Create ledAckTask once; it persists across BLE reinits (e.g. after sleep/wake).
-  if (ledAckTaskHandle == NULL)
-  {
-    xTaskCreatePinnedToCore(ledAckTask, "ledAck", 4096, NULL, 1, &ledAckTaskHandle, 1);
-  }
 }
 
 void initSerialPortCommunication(void)
@@ -2038,15 +2012,6 @@ void loop()
     // BLE message handling done via MyCallbacksChesslink::onWrite()
   }
 
-  // Send deferred "l" ACK for L messages from the main loop (Core 1).
-  // The onWrite callback sets this flag and returns immediately so the BLE task
-  // is not blocked between consecutive L messages from ChessLink engine analysis.
-  if (pendingLedAck && chessBoard.emulation == 1 && connection == BLE)
-  {
-    pendingLedAck = false;
-    Serial.printf("[l] ACK sent at %lu ms (LOOP fallback)\n", millis());
-    sendMessageToChessBoard("l");
-  }
 
   if (chessBoard.emulation == 1) // Millennium Chesslink
   {
