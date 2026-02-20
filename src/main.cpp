@@ -81,6 +81,7 @@ portMUX_TYPE mephistoMux = portMUX_INITIALIZER_UNLOCKED;
 // All other responses (V56, R, W, S53, I, X) stay synchronous — they are small,
 // infrequent (initialization-only), and must not be reordered or dropped.
 volatile bool pendingLedAck = false;
+static TaskHandle_t ledAckTaskHandle = NULL;
 
 byte eeprom[5]={0,20,3,20,15};
 byte LED_startup_sequence[64] = {0,1,2,3,4,5,6,7,15,23,31,39,47,55,63,62,61,60,59,58,57,56,48,40,32,24,16,8, 9,10,11,12,13,14,22,30,38,46,54,53,52,51,50,49,41,33,25,17, 18,19,20,21,29,37,45,44,43,42,34,26, 27,28,36,35};
@@ -463,6 +464,20 @@ class MyServerCallbacks : public BLEServerCallbacks
     debugPrintln("Millennium Emulation: BLE DEVICE CONNECTED");
   };
 
+  // Extended callback with GATT params — request a short connection interval.
+  // Default iOS/Android interval can be 1s+; each L→l ACK round-trip costs one
+  // interval, so 14 engine-analysis L messages × 1s = 14s of LED lag per move.
+  void onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
+  {
+    esp_ble_conn_update_params_t conn_params = {};
+    memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+    conn_params.latency  = 0;
+    conn_params.min_int  = 0x08;  // 10ms  (0x08 × 1.25ms)
+    conn_params.max_int  = 0x18;  // 30ms  (0x18 × 1.25ms)
+    conn_params.timeout  = 400;   // 4s supervision timeout
+    esp_ble_gap_update_conn_params(&conn_params);
+  };
+
   void onDisconnect(BLEServer *pServer)
   {
     debugPrintln("Millennium Emulation: BLE DEVICE DISCONNECTED");
@@ -656,6 +671,24 @@ void initBleServicePegasus()
 
 }
 
+// Fast ACK task for ChessLink BLE L-messages.
+// Runs on Core 1 alongside the Arduino loop task at the same priority (1).
+// Arduino's delay() calls vTaskDelay() internally, yielding Core 1 to this task,
+// so the "l" ACK is drained within ~5 ms of arrival rather than waiting up to
+// 300 ms for the main LED-write block to finish.
+static void ledAckTask(void *pvParameters)
+{
+  for (;;)
+  {
+    if (pendingLedAck && chessBoard.emulation == 1 && connection == BLE)
+    {
+      pendingLedAck = false;
+      sendMessageToChessBoard("l");
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
 void initBleServiceChesslink()
 {
   //Bluetooth BLE initialization for mode B boards
@@ -707,6 +740,12 @@ void initBleServiceChesslink()
    //semaphore to handle data over BLE
   sendBLEsemaphore = xSemaphoreCreateMutex();
   xSemaphoreGive(sendBLEsemaphore);
+
+  // Create ledAckTask once; it persists across BLE reinits (e.g. after sleep/wake).
+  if (ledAckTaskHandle == NULL)
+  {
+    xTaskCreatePinnedToCore(ledAckTask, "ledAck", 4096, NULL, 1, &ledAckTaskHandle, 1);
+  }
 }
 
 void initSerialPortCommunication(void)
