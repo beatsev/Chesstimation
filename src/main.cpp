@@ -229,21 +229,16 @@ byte debugPrintln(const char *message)
 
 void saveBoardSettings(void)
 {
-  connectionType saveConnection = USB;
-
   if (!SPIFFS.begin())
   {
     SPIFFS.format();
     SPIFFS.begin();
   }
 
-  if ((connection == BLE) && (chessBoard.emulation != 0))
-  {
-    saveConnection = BLE;
-  }
-  // BT removed - only USB and BLE supported now
+  // Connection byte: 0 = USB, 2 = BLE.  Value 1 was legacy BT Classic (removed).
+  // Do NOT write the enum value directly — BLE enum = 1 collides with old BT slot.
+  uint8_t saveConnection = (connection == BLE && chessBoard.emulation != 0) ? 2 : 0;
 
-  // store data
   File f = SPIFFS.open(BOARD_SETUP_FILE, "w");
   if (f)
   {
@@ -307,11 +302,10 @@ void loadBoardSettings(void)
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
-        // Map old BT (value 1) to USB for backward compatibility
-        if (tempInt8[0] == 0) connection = USB;      // 0 = USB
-        else if (tempInt8[0] == 1) connection = USB; // 1 = old BT, map to USB
-        else if (tempInt8[0] >= 2) connection = BLE; // 2+ = BLE
-        else connection = USB; // Default to USB
+        // 0 = USB (explicit). Anything else = BLE.
+        // Value 1 was legacy BT Classic; treat as BLE since BT Classic is removed.
+        // Value 2 = BLE (written by current firmware).
+        connection = (tempInt8[0] == 0) ? USB : BLE;
       }
       if (f.readBytes((char *)tempInt8, 1) == 1)
       {
