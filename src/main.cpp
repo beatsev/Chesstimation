@@ -462,26 +462,16 @@ class MyServerCallbacks : public BLEServerCallbacks
     debugPrintln("Millennium Emulation: BLE DEVICE CONNECTED");
   };
 
-  // Extended callback with GATT params — request a short connection interval.
-  // Default iOS/Android interval can be 1s+; each L→l ACK round-trip costs one
-  // interval, so 14 engine-analysis L messages × 1s = 14s of LED lag per move.
+  // Extended callback — log the interval iOS actually chose.
+  // We no longer request any interval change: every request we tried (30ms, 300ms)
+  // triggered ChessLink's slow-mode timer (1350ms or 8745ms gaps) regardless of ACK
+  // speed.  The iOS default (~540ms) is the only interval that keeps ChessLink in
+  // fast mode (one L per event).
   void onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
   {
-    // Log the connection interval iOS actually negotiated at connect time.
     uint16_t initInterval = param->connect.conn_params.interval; // units of 1.25ms
     Serial.printf("[BLE] Connected: initial interval=%u (%.1fms)\n",
                   initInterval, initInterval * 1.25f);
-
-    // Request a shorter interval post-connect.  Min=20ms — Apple rejects < 15ms
-    // for non-HID devices; 10ms was likely causing the update to be rejected.
-    esp_ble_conn_update_params_t conn_params = {};
-    memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
-    conn_params.latency  = 0;
-    conn_params.min_int  = 0xF0;  // 300ms  (0xF0 × 1.25ms)
-    conn_params.max_int  = 0x140; // 400ms  (0x140 × 1.25ms)
-    conn_params.timeout  = 400;   // 4s supervision timeout
-    esp_err_t err = esp_ble_gap_update_conn_params(&conn_params);
-    Serial.printf("[BLE] Conn interval update sent (300-400ms), err=%d\n", err);
   };
 
   void onDisconnect(BLEServer *pServer)
@@ -707,7 +697,12 @@ void initBleServiceChesslink()
   pTxCharacteristic->addDescriptor(new BLE2902());
 
   // Create a BLE Characteristic for RX data
-  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic("49535343-8841-43f4-a8d4-ecbe34729bb3", BLECharacteristic::PROPERTY_WRITE);
+  // PROPERTY_WRITE_NR added: if ChessLink uses write-without-response, no WRITE_RSP
+  // is sent by the peripheral, so our "l" notify can go in the same BLE connection
+  // event as the L write — potentially enabling same-event fast-mode delivery.
+  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
+      "49535343-8841-43f4-a8d4-ecbe34729bb3",
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pRxCharacteristic->setCallbacks(new MyCallbacksChesslink());
 
   // Start the service
@@ -729,11 +724,9 @@ void initBleServiceChesslink()
 
   pServer->getAdvertising()->setAdvertisementData(oAdvertisementData);
 
-  // Advertise preferred connection interval so iOS uses it from the first connection.
-  // Apple accepts ≥20ms; 10ms was causing our post-connect request to be rejected.
-  pServer->getAdvertising()->setMinPreferred(0xF0);  // 300ms (0xF0 × 1.25ms)
-  pServer->getAdvertising()->setMaxPreferred(0x140); // 400ms (0x140 × 1.25ms)
-
+  // Do NOT set preferred connection interval: any hint we advertise causes iOS to
+  // connect at that interval rather than its natural ~540ms default, and non-default
+  // intervals trigger ChessLink's slow-mode timer regardless of ACK speed.
   pServer->getAdvertising()->start();
   
    //semaphore to handle data over BLE
